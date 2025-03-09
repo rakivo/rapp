@@ -28,6 +28,12 @@ constexpr std::array<const char *, 3> SEARCH_PATHS = {
   "~/.local/share/applications"
 };
 
+constexpr Color TEXT_COLOR        = {209, 184, 151, 255};
+constexpr Color ACCENT_COLOR      = {100, 150, 170, 255};
+constexpr Color HIGHLIGHT_COLOR    = {30, 50, 57, 255};
+constexpr Color SCROLLBAR_COLOR    = {50, 70, 80, 255};
+constexpr Color BACKGROUND_COLOR  = {6, 35, 41, 255};
+
 struct file_t {
   char *ptr;
   off_t size;
@@ -239,7 +245,7 @@ int main(void)
     scroll_offset = std::min(scroll_offset, (float) ((apps.size() * line_h) - h + padding));
 
     BeginDrawing();
-    ClearBackground(RAYWHITE);
+    ClearBackground(BACKGROUND_COLOR);
 
     int start_idx = std::max(0, (int) (scroll_offset / line_h));
     int end_idx = std::min((int) (apps.size()), (int) ((scroll_offset + h) / line_h));
@@ -247,10 +253,8 @@ int main(void)
     int y = padding - (int) (scroll_offset) + start_idx * line_h;
     for (int i = start_idx; i < end_idx; ++i) {
       const auto &[app_name, exec] = apps[i];
-      DrawText(app_name.c_str(), padding, y, font_size, BLACK);
-
       if (GetMouseY() > y && GetMouseY() < y + line_h) {
-        DrawRectangle(0, y, w, line_h, Fade(LIGHTGRAY, 0.5f));
+        DrawRectangle(0, y, w, line_h, HIGHLIGHT_COLOR);
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
           launch_application(exec);
@@ -258,13 +262,14 @@ int main(void)
         }
       }
 
+      DrawText(app_name.c_str(), padding, y, font_size, TEXT_COLOR);
       y += line_h;
     }
 
     if (apps.size() * line_h > h) {
       float scrollbar_h = h / (float) (apps.size() * line_h) * h;
       float scrollbar_y = scroll_offset / (float) ((apps.size() * line_h) - h) * (h - scrollbar_h);
-      DrawRectangle(w - 20, scrollbar_y, 10, scrollbar_h, DARKGRAY);
+      DrawRectangle(w - 20, scrollbar_y, 10, scrollbar_h, SCROLLBAR_COLOR);
     }
 
     EndDrawing();
