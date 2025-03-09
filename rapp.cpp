@@ -30,8 +30,8 @@ constexpr std::array<const char *, 3> SEARCH_PATHS = {
 
 constexpr Color TEXT_COLOR        = {209, 184, 151, 255};
 constexpr Color ACCENT_COLOR      = {100, 150, 170, 255};
-constexpr Color HIGHLIGHT_COLOR    = {30, 50, 57, 255};
-constexpr Color SCROLLBAR_COLOR    = {50, 70, 80, 255};
+constexpr Color HIGHLIGHT_COLOR   = {30, 50, 57, 255};
+constexpr Color SCROLLBAR_COLOR   = {50, 70, 80, 255};
 constexpr Color BACKGROUND_COLOR  = {6, 35, 41, 255};
 
 struct file_t {
@@ -107,7 +107,7 @@ split(const char *str, off_t size, char delim)
 {
   std::vector<std::string_view> ret = {};
 
-  const char *start = str, *ptr = str, *end = str + size;
+  const char *start = str, *ptr = str, *const end = str + size;
   for (; ptr != end; ptr++) {
     if (*ptr == delim) {
       ret.emplace_back(start, ptr - start);
