@@ -1,0 +1,30 @@
+builddir = build
+
+cxx = c++
+std = -std=gnu++20 # designated initializers, constexpr
+libs = -l:'libraylib.a'
+libpaths = -L./thirdparty/raylib/lib
+wflags = -Wno-missing-field-initializers
+iflags = -Ithirdparty/raylib/include
+lflags = $libpaths $libs
+cflags_ = $std $wflags $iflags -Wall -Wextra -Wpedantic
+cflags = $cflags_ -O1
+cflags_release = $cflags_ -O3 -DNDEBUG
+
+rule cxx
+  depfile = $out.d
+  command = $cxx $cflags $iflags -MD -MF $out.d -o $out -c $in
+
+rule link
+  command = $cxx $cflags -o $out $in $lflags
+
+build $builddir/rapp.o: cxx rapp.cpp
+build $builddir/rapp: link $builddir/rapp.o
+
+build $builddir/rapp-release.o: cxx rapp.cpp
+  cflags = $cflags_release
+
+build $builddir/rapp-release: link $builddir/rapp-release.o
+  cflags = $cflags_release
+
+default $builddir/rapp
