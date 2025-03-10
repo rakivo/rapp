@@ -7,7 +7,7 @@ libpaths = -L./thirdparty/raylib/lib
 wflags = -Wno-missing-field-initializers
 iflags = -Ithirdparty/raylib/include
 lflags = $libpaths $libs
-cflags_ = $std $wflags $iflags -Wall -Wextra -Wpedantic
+cflags_ = $std $wflags $iflags -Wall -Wextra -Wpedantic -fsanitize=address
 cflags = $cflags_ -O1
 cflags_release = $cflags_ -O3 -DNDEBUG
 
@@ -27,4 +27,10 @@ build $builddir/rapp-release.o: cxx rapp.cpp
 build $builddir/rapp-release: link $builddir/rapp-release.o
   cflags = $cflags_release
 
-default $builddir/rapp
+phony debug
+build debug: $builddir/rapp
+
+phony release
+build release: $builddir/rapp-release
+
+default debug

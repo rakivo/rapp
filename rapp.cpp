@@ -10,6 +10,7 @@
 
 #include <tuple>
 #include <array>
+#include <memory>
 #include <vector>
 #include <iostream>
 #include <filesystem>
@@ -21,6 +22,12 @@ namespace fs = std::filesystem;
 
 #define eprintf(...) fprintf(stderr, __VA_ARGS__)
 #define shift(argc, argv) (assert(argc), argc--, *argv++)
+
+struct app_t;
+struct file_t;
+
+std::vector<std::string_view>
+split(const char *str, size_t size, char delim);
 
 constexpr std::array<const char *, 3> SEARCH_PATHS = {
   "/usr/share/applications",
@@ -34,9 +41,11 @@ constexpr Color HIGHLIGHT_COLOR   = {30, 50, 57, 255};
 constexpr Color SCROLLBAR_COLOR   = {50, 70, 80, 255};
 constexpr Color BACKGROUND_COLOR  = {6, 35, 41, 255};
 
+static std::vector<app_t> apps = {};
+
 struct file_t {
   char *ptr;
-  off_t size;
+  size_t size;
 
   inline constexpr file_t(void) noexcept
     : ptr(NULL), size(0) {}
@@ -47,7 +56,7 @@ struct file_t {
   inline constexpr char
   operator[](off_t offset) const noexcept
   {
-    if (offset < 0 || offset >= size) [[unlikely]] {
+    if (offset < 0 || (size_t) offset >= size) [[unlikely]] {
       assert(0 && "unreachable");
     }
     return ptr[offset];
@@ -66,44 +75,72 @@ struct file_t {
     printf("unmapped %zu bytes from %p\n", size, ptr);
 #endif
   }
+
+	static const file_t read(const char *file_path, bool *ok)
+  {
+    int fd = open(file_path, O_RDONLY, (mode_t) 0400);
+    if (fd == -1) {
+      *ok = false;
+      return file_t {};
+    }
+  
+    struct stat file_info = {0};
+    if (fstat(fd, &file_info) == -1) {
+      *ok = false;
+      return file_t {};
+    }
+  
+    const off_t size = file_info.st_size;
+    if (size == 0) {
+      return file_t {};
+    }
+  
+    char *ptr = (char *) mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+    if (ptr == MAP_FAILED) {
+      close(fd);
+      *ok = false;
+      return file_t {};
+    }
+  
+    close(fd);
+  
+    return file_t(ptr, size);
+  }
 };
 
-static std::vector<file_t> files = {};
-static std::vector<std::pair<std::string, std::string>> apps = {};
+struct app_t {
+  const std::string exec, name;
 
-file_t read_file(const char *file_path, bool *ok)
-{
-  int fd = open(file_path, O_RDONLY, (mode_t) 0400);
-  if (fd == -1) {
-    *ok = false;
-    return file_t {};
+  ~app_t(void) = default;
+  
+  static const app_t parse(const char *file_path, bool *ok)
+  {
+    bool ok_ = true;
+    file_t file = file_t::read(file_path, &ok_);
+  
+    if (file.size == 0) {
+      if (!ok) {
+        eprintf("could not read file: %s\n", file_path);
+      }
+      *ok = ok_;
+      return app_t{};
+    }
+  
+    std::string exec, name;
+    for (auto &line: split(file.ptr, file.size, '\n')) {
+      if (line.find("Name=") == 0) {
+        name = line.substr(5);
+      } else if (line.find("Exec=") == 0) {
+        exec = line.substr(5);
+      }
+    }
+  
+    return app_t{exec, name};
   }
-
-  struct stat file_info = {0};
-  if (fstat(fd, &file_info) == -1) {
-    *ok = false;
-    return file_t {};
-  }
-
-  const off_t size = file_info.st_size;
-  if (size == 0) {
-    return file_t {};
-  }
-
-  char *ptr = (char *) mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-  if (ptr == MAP_FAILED) {
-    close(fd);
-    *ok = false;
-    return file_t {};
-  }
-
-  close(fd);
-
-  return file_t(ptr, size);
-}
+};
 
 std::vector<std::string_view>
-split(const char *str, off_t size, char delim)
+split(const char *str, size_t size, char delim)
 {
   std::vector<std::string_view> ret = {};
 
@@ -122,34 +159,6 @@ split(const char *str, off_t size, char delim)
   return ret;
 }
 
-void parse_desktop_file(const char *file_path)
-{
-  bool ok = true;
-  file_t file = read_file(file_path, &ok);
-
-  if (file.size == 0) {
-    if (!ok) {
-      eprintf("could not read file: %s\n", file_path);
-    }
-    return;
-  }
-
-  std::string app_name, exec;
-  for (auto &line: split(file.ptr, file.size, '\n')) {
-    if (line.find("Name=") == 0) {
-      app_name = line.substr(5);
-    } else if (line.find("Exec=") == 0) {
-      exec = line.substr(5);
-    }
-  }
-
-  if (!app_name.empty() && !exec.empty()) {
-    apps.emplace_back(app_name, exec);
-  }
-
-  files.emplace_back(file);
-}
-
 void launch_application(const std::string &command)
 {
   std::string cleaned_command = command;
@@ -161,7 +170,7 @@ void launch_application(const std::string &command)
 
   std::string arg = {};
   std::vector<std::string> args = {};
-  for (char c : cleaned_command) {
+  for (char c: cleaned_command) {
     if (c == ' ') {
       if (!arg.empty()) {
         args.emplace_back(arg);
@@ -215,12 +224,16 @@ int main(void)
     if (!fs::is_directory(path)) continue;
     for (const auto &e: fs::directory_iterator(path)) {
       if (e.path().extension() == ".desktop") {
-        parse_desktop_file(e.path().c_str());
+        bool ok = true;
+        const auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
+        if (ok && !name.empty() && !exec.empty()) {
+          apps.emplace_back(name, exec);
+        }
       }
     }
   }
 
-  const int w = 800, h = 600;
+  constexpr int w = 800, h = 600;
 
   SetTargetFPS(60);
   SetConfigFlags(FLAG_MSAA_4X_HINT);
@@ -232,12 +245,12 @@ int main(void)
 
   SetWindowPosition((mw - w) / 2, (mh - h) / 2);
 
-  const int padding = 20;
-  const int font_size = 20;
-  const int line_h = font_size + 10;
+  constexpr int padding = 20;
+  constexpr int font_size = 20;
+  constexpr int line_h = font_size + 10;
 
   float scroll_offset = 0.0f;
-  const float scroll_speed = 20.0f;
+  constexpr float scroll_speed = 25.0f;
 
   while (!WindowShouldClose()) {
     scroll_offset -= GetMouseWheelMove() * scroll_speed;
@@ -252,7 +265,7 @@ int main(void)
 
     int y = padding - (int) (scroll_offset) + start_idx * line_h;
     for (int i = start_idx; i < end_idx; ++i) {
-      const auto &[app_name, exec] = apps[i];
+      const auto &[name, exec] = apps[i];
       if (GetMouseY() > y && GetMouseY() < y + line_h) {
         DrawRectangle(0, y, w, line_h, HIGHLIGHT_COLOR);
 
@@ -262,7 +275,7 @@ int main(void)
         }
       }
 
-      DrawText(app_name.c_str(), padding, y, font_size, TEXT_COLOR);
+      DrawText(name.c_str(), padding, y, font_size, TEXT_COLOR);
       y += line_h;
     }
 
