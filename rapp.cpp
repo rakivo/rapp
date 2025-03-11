@@ -58,7 +58,7 @@ struct file_t {
 };
 
 struct app_t {
-  const std::string name, exec;
+  std::string name, exec;
 
   ~app_t(void) = default;
   
@@ -223,7 +223,7 @@ void launch_application(const std::string &command)
   }
 }
 
-static std::string input_text;
+static std::string input;
 
 static std::vector<app_t> apps;
 static std::vector<size_t> filtered_apps;
@@ -257,15 +257,11 @@ static inline const app_t &get_app(size_t idx)
 
 static inline void filter_apps(void)
 {
-  if (!input_text.empty()) {
+  if (!input.empty()) {
     filtered_apps.clear();
-    std::string lower_input = input_text;
-    std::transform(lower_input.begin(), lower_input.end(), lower_input.begin(), ::tolower);
     for (size_t i = 0; i < apps.size(); ++i) {
       const auto &[name, exec] = apps[i];
-      std::string lower_name = name;
-      std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
-      if (lower_name.find(lower_input) != std::string::npos) {
+      if (name.find(input) != std::string::npos) {
         filtered_apps.emplace_back(i);
       }
     }
@@ -279,8 +275,8 @@ static inline void filter_apps(void)
 
 static inline void handle_backspace(void)
 {
-  if (!input_text.empty()) {
-    input_text.pop_back();
+  if (!input.empty()) {
+    input.pop_back();
     filter_apps();
   }
 }
@@ -343,7 +339,7 @@ static bool handle_keys(void)
   auto ch = GetCharPressed();
   while (ch > 0) {
     if (ch >= 32 && ch <= 125) {
-      input_text += (char)(ch);
+      input += tolower((char) (ch));
     }
 
     ch = GetCharPressed();
@@ -398,11 +394,11 @@ static void parse_apps(void)
     for (const auto &e: fs::directory_iterator(path)) {
       if (e.path().extension() == ".desktop") {
         auto ok = true;
-        const auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
+        auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
         if (ok && !name.empty() && !exec.empty()) {
-          const app_t app{name, exec};
           if (seen_names.count(name) == 0) {
-            apps.emplace_back(app);
+            apps.emplace_back(name, exec);
             seen_names.insert(name);
             filtered_apps.emplace_back(apps_count);
             apps_count++;
@@ -427,7 +423,7 @@ int main(void)
 
   parse_apps();
 
-  input_text.reserve(256);
+  input.reserve(256);
 
   while (!WindowShouldClose()) {
     apps_len = draw_all_apps ? apps.size() : filtered_apps.size();
@@ -450,8 +446,8 @@ int main(void)
     const char *prompt = "search: ";
     auto prompt_text_color = TEXT_COLOR;
 
-    if (!input_text.empty()) {
-      prompt = input_text.c_str();
+    if (!input.empty()) {
+      prompt = input.c_str();
       prompt_text_color = RAYWHITE;
     }
 
