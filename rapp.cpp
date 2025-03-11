@@ -7,7 +7,6 @@
 #include <sys/mman.h>
 
 #include <array>
-#include <memory>
 #include <vector>
 #include <algorithm>
 #include <filesystem>
@@ -23,26 +22,22 @@ namespace fs = std::filesystem;
 #define shift(argc, argv) (assert(argc), argc--, *argv++)
 
 struct file_t {
-  char *ptr;
+  const std::string_view sv;
   size_t size;
 
-  inline constexpr file_t(void) noexcept
-    : ptr(NULL), size(0) {}
-
-  inline constexpr file_t(char *ptr, off_t size) noexcept
-    : ptr(ptr), size(size) {}
+  inline constexpr file_t(const std::string_view sv, off_t size) noexcept
+    : sv(sv), size(size) {}
 
   inline constexpr char
   operator[](off_t offset) const noexcept
   {
-    if (offset < 0 or (size_t) offset >= size) [[unlikely]] {
-      assert(0 && "unreachable");
-    }
-    return ptr[offset];
+    return sv[offset];
   };
 
   inline constexpr ~file_t(void)
   {
+    char *ptr = const_cast<char *>(sv.data());
+
     if (ptr == 0 or size == 0) return;
 
     if (munmap(ptr, size) == -1) [[unlikely]] {
@@ -65,9 +60,6 @@ struct app_t {
   
   static const app_t parse(const char *file_path, bool *ok);
 };
-
-std::vector<std::string_view>
-split(const char *str, size_t size, char delim);
 
 constexpr Color TEXT_COLOR              = {209, 184, 151, 0xFF};
 constexpr Color ACCENT_COLOR            = {100, 150, 170, 0xFF};
@@ -93,33 +85,53 @@ constexpr float REPEAT_KEY_INTERVAL = 0.125;
 
 const file_t file_t::read(const char *file_path, bool *ok)
 {
+  static const file_t empty = {"", 0};
+
   int fd = open(file_path, O_RDONLY, (mode_t) 0400);
   if (fd == -1) {
     *ok = false;
-    return {};
+    return empty;
   }
 
   struct stat file_info = {0};
   if (fstat(fd, &file_info) == -1) {
     *ok = false;
-    return {};
+    return empty;
   }
 
   const off_t size = file_info.st_size;
   if (size == 0) {
-    return {};
+    return empty;
   }
 
   char *ptr = (char *) mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
   if (ptr == MAP_FAILED) {
     close(fd);
     *ok = false;
-    return {};
+    return empty;
   }
 
   close(fd);
 
   return file_t{ptr, size};
+}
+
+static inline std::vector<std::string_view>
+split(const std::string_view &sv, char delim)
+{
+  std::vector<std::string_view> ret;
+  size_t start = 0, pos = sv.find(delim);
+  while (pos != std::string::npos) {
+    ret.emplace_back(sv.data() + start, pos - start);
+    start = pos + 1;
+    pos = sv.find(delim, start);
+  }
+
+  if (start < sv.size()) {
+    ret.emplace_back(sv.data() + start, sv.size() - start);
+  }
+
+  return ret;
 }
 
 const app_t app_t::parse(const char *file_path, bool *ok)
@@ -136,7 +148,9 @@ const app_t app_t::parse(const char *file_path, bool *ok)
   }
 
   std::string exec, name;
-  for (auto &line: split(file.ptr, file.size, '\n')) {
+  for (auto &line: split(file.sv, '\n')) {
+    if (!name.empty() && !exec.empty()) break;
+
     if (line.find("Name=") == 0) {
       name = line.substr(5);
     } else if (line.find("Exec=") == 0) {
@@ -145,26 +159,6 @@ const app_t app_t::parse(const char *file_path, bool *ok)
   }
 
   return app_t{name, exec};
-}
-
-std::vector<std::string_view>
-split(const char *str, size_t size, char delim)
-{
-  std::vector<std::string_view> ret = {};
-
-  const char *start = str, *ptr = str, *const end = str + size;
-  for (; ptr != end; ptr++) {
-    if (*ptr == delim) {
-      ret.emplace_back(start, ptr - start);
-      start = ptr + 1;
-    }
-  }
-
-  if (start < ptr) {
-    ret.emplace_back(start, ptr - start);
-  }
-
-  return ret;
 }
 
 void launch_application(const std::string &command)
@@ -394,17 +388,17 @@ static void parse_apps(void)
     auto path = fs::absolute(fs::path(dir));
     if (!fs::is_directory(path)) continue;
     for (const auto &e: fs::directory_iterator(path)) {
-      if (e.path().extension() == ".desktop") {
-        auto ok = true;
-        auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
-        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-        if (ok && !name.empty() && !exec.empty()) {
-          if (seen_names.count(name) == 0) {
-            apps.emplace_back(name, exec);
-            seen_names.insert(name);
-            filtered_apps.emplace_back(apps_count);
-            apps_count++;
-          }
+      if (e.path().extension() != ".desktop") continue;
+
+      auto ok = true;
+      auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
+      std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+      if (ok && !name.empty() && !exec.empty()) {
+        if (seen_names.count(name) == 0) {
+          apps.emplace_back(name, exec);
+          seen_names.insert(name);
+          filtered_apps.emplace_back(apps_count);
+          apps_count++;
         }
       }
     }
