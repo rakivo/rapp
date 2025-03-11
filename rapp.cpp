@@ -34,15 +34,15 @@ struct file_t {
   inline constexpr char
   operator[](off_t offset) const noexcept
   {
-    if (offset < 0 || (size_t) offset >= size) [[unlikely]] {
+    if (offset < 0 or (size_t) offset >= size) [[unlikely]] {
       assert(0 && "unreachable");
     }
     return ptr[offset];
   };
 
-  constexpr ~file_t(void)
+  inline constexpr ~file_t(void)
   {
-    if (ptr == 0 || size == 0) return;
+    if (ptr == 0 or size == 0) return;
 
     if (munmap(ptr, size) == -1) [[unlikely]] {
       eprintf("could not unmap file\n");
@@ -54,7 +54,7 @@ struct file_t {
 #endif
   }
 
-	static const file_t read(const char *file_path, bool *ok);
+  static const file_t read(const char *file_path, bool *ok);
 };
 
 struct app_t {
@@ -74,40 +74,51 @@ constexpr std::array<const char *, 3> SEARCH_PATHS = {
   "~/.local/share/applications"
 };
 
-constexpr Color TEXT_COLOR        = {209, 184, 151, 255};
-constexpr Color ACCENT_COLOR      = {100, 150, 170, 255};
-constexpr Color HIGHLIGHT_COLOR   = { 30,  50,  57, 255};
-constexpr Color SCROLLBAR_COLOR   = { 50,  70,  80, 255};
-constexpr Color BACKGROUND_COLOR  = {  6,  35,  41, 255};
+constexpr Color TEXT_COLOR              = {209, 184, 151, 0xFF};
+constexpr Color ACCENT_COLOR            = {100, 150, 170, 0xFF};
+constexpr Color HIGHLIGHT_COLOR         = { 30,  50,  57, 0xFF};
+constexpr Color SCROLLBAR_COLOR         = { 50,  70,  80, 0xFF};
+constexpr Color BACKGROUND_COLOR        = {  6,  35,  41, 0xFF};
+constexpr Color PROMPT_BACKGROUND_COLOR = { 30,  30,  30, 0xFF};
 
-static std::string input_text;
-static std::vector<app_t> apps;
-static std::vector<size_t> filtered_apps;
+constexpr int PADDING = 20;
+constexpr int FONT_SIZE = 20;
+constexpr int LINE_H = FONT_SIZE + 10;
+
+constexpr float SCROLL_SPEED = 50.0;
+
+constexpr int WINDOW_W = 800;
+constexpr int WINDOW_H = 600;
+
+constexpr float PROMPT_H = 40.0;
+
+constexpr float INITIAL_KEY_DELAY = 0.5;
+constexpr float REPEAT_KEY_INTERVAL = 0.125;
 
 const file_t file_t::read(const char *file_path, bool *ok)
 {
   int fd = open(file_path, O_RDONLY, (mode_t) 0400);
   if (fd == -1) {
     *ok = false;
-    return file_t{};
+    return {};
   }
 
   struct stat file_info = {0};
   if (fstat(fd, &file_info) == -1) {
     *ok = false;
-    return file_t{};
+    return {};
   }
 
   const off_t size = file_info.st_size;
   if (size == 0) {
-    return file_t{};
+    return {};
   }
 
   char *ptr = (char *) mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
   if (ptr == MAP_FAILED) {
     close(fd);
     *ok = false;
-    return file_t{};
+    return {};
   }
 
   close(fd);
@@ -125,7 +136,7 @@ const app_t app_t::parse(const char *file_path, bool *ok)
       eprintf("could not read file: %s\n", file_path);
     }
     *ok = ok_;
-    return app_t{};
+    return {};
   }
 
   std::string exec, name;
@@ -218,6 +229,23 @@ void launch_application(const std::string &command)
   }
 }
 
+static std::string input_text;
+
+static std::vector<app_t> apps;
+static std::vector<size_t> filtered_apps;
+
+static bool no_matches;
+
+static off_t lcursor;
+static off_t visible_start_idx;
+static off_t visible_end_idx;
+
+static bool lcursor_visible;
+
+static float scroll_offset;
+
+static size_t apps_len;
+
 void filter_apps(void)
 {
   if (!input_text.empty()) {
@@ -232,11 +260,71 @@ void filter_apps(void)
         filtered_apps.emplace_back(i);
       }
     }
+
+    no_matches = filtered_apps.empty();
   } else {
     filtered_apps.clear();
-    for (size_t i = 0; i < apps.size(); ++i) {
-      filtered_apps.emplace_back(i);
+  }
+}
+
+static inline void handle_backspace(void)
+{
+  if (!input_text.empty()) {
+    input_text.pop_back();
+    filter_apps();
+  }
+}
+
+static inline void go_prev(void)
+{
+  if (!lcursor_visible) {
+    lcursor = visible_start_idx;
+  } else {
+    lcursor = std::max(0, (int)lcursor - 1);
+    if (lcursor < visible_start_idx) {
+      scroll_offset -= LINE_H;
     }
+  }
+}
+
+static inline void go_next(void)
+{
+  if (!lcursor_visible) {
+    lcursor = visible_start_idx;
+  } else {
+    lcursor = std::min((off_t) apps_len - 1, lcursor + 1);
+    if (lcursor > visible_end_idx) {
+      scroll_offset += LINE_H;
+    }
+  }
+}
+
+static inline void handle_key_repeat(bool key_down,
+                                     bool key_pressed,
+                                     double &last_press_time,
+                                     bool &repeat_active,
+                                     void (*action)(void))
+{
+  const auto time = GetTime();
+
+  if (key_down) {
+    if (!repeat_active) {
+      if (time - last_press_time > INITIAL_KEY_DELAY) {
+        repeat_active = true;
+      }
+    } else {
+      if (time - last_press_time > REPEAT_KEY_INTERVAL) {
+        last_press_time = time;
+        action();
+      }
+    }
+  } else {
+    repeat_active = false;
+  }
+
+  if (key_pressed) {
+    last_press_time = time;
+    action();
   }
 }
 
@@ -254,7 +342,6 @@ int main(void)
         const auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
         if (ok && !name.empty() && !exec.empty()) {
           const app_t app{name, exec};
-          // NOTE: this is slow asf
           if (seen_names.count(name) == 0) {
             apps.emplace_back(app);
             seen_names.insert(name);
@@ -266,56 +353,79 @@ int main(void)
     }
   }
 
-  constexpr int w = 800, h = 600;
-
   SetTargetFPS(60);
   SetConfigFlags(FLAG_MSAA_4X_HINT);
-  InitWindow(w, h, "rapp");
+  InitWindow(WINDOW_W, WINDOW_H, "rapp");
   SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor()));
 
-  int m = GetCurrentMonitor();
-  int mw = GetMonitorWidth(m), mh = GetMonitorHeight(m);
+  const int m = GetCurrentMonitor();
+  const int monitor_w = GetMonitorWidth(m), monitor_h = GetMonitorHeight(m);
 
-  SetWindowPosition((mw - w) / 2, (mh - h) / 2);
-
-  constexpr int padding = 20;
-  constexpr int font_size = 20;
-  constexpr int line_h = font_size + 10;
-
-  float scroll_offset = 0.0f;
-  constexpr float scroll_speed = 50.0f;
-
-  constexpr float prompt_h = 40.0f;
-  constexpr Color PROMPT_BACKGROUND_COLOR = {30, 30, 30, 255};
+  SetWindowPosition((monitor_w - WINDOW_W) / 2, (monitor_h - WINDOW_H) / 2);
 
   input_text.reserve(256);
 
+  auto backspace_repeat_active = false;
+  double last_backspace_press_time = 0.0;
+
+  auto n_repeat_active = false;
+  double last_n_press_time = 0.0;
+
+  auto p_repeat_active = false;
+  double last_p_press_time = 0.0;
+
   while (!WindowShouldClose()) {
-    auto key = GetCharPressed();
-    while (key > 0) {
-      if (key >= 32 && key <= 125) {
-        input_text += (char) (key);
-      }
+    const auto draw_all_apps = filtered_apps.empty() && !no_matches;
+    apps_len = draw_all_apps ? apps.size() : filtered_apps.size();
 
-      key = GetCharPressed();
-      filter_apps();
+    // handle keys
+    {
+	    auto ch = GetCharPressed();
+	    while (ch > 0) {
+	      if (ch >= 32 && ch <= 125) {
+	        input_text += (char) (ch);
+	      }
+	
+	      ch = GetCharPressed();
+	      filter_apps();
+	    }
+	
+	    visible_start_idx = (int) (scroll_offset / LINE_H);
+	    visible_end_idx = (int) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
+	    lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
+	
+	    handle_key_repeat(IsKeyDown(KEY_BACKSPACE),
+	                      IsKeyPressed(KEY_BACKSPACE),
+	                      last_backspace_press_time,
+	                      backspace_repeat_active,
+	                      handle_backspace);
+	
+	    if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
+	      handle_key_repeat(IsKeyDown(KEY_N),
+	                        IsKeyPressed(KEY_N),
+	                        last_n_press_time,
+	                        n_repeat_active,
+	                        go_next);
+	
+	      handle_key_repeat(IsKeyDown(KEY_P),
+	                        IsKeyPressed(KEY_P),
+	                        last_p_press_time,
+	                        p_repeat_active,
+	                        go_prev);
+	    }
     }
 
-    if (IsKeyPressed(KEY_BACKSPACE) && !input_text.empty()) {
-      input_text.pop_back();
-      filter_apps();
+    // handle mouse wheel
+    {
+      scroll_offset -= GetMouseWheelMove() * SCROLL_SPEED;
+      scroll_offset = std::max(scroll_offset, 0.0f);
+      scroll_offset = std::min(scroll_offset, (float) ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H) + PADDING));
     }
-
-    const auto apps_len = filtered_apps.size();
-
-    scroll_offset -= GetMouseWheelMove() * scroll_speed;
-    scroll_offset = std::max(scroll_offset, 0.0f);
-    scroll_offset = std::min(scroll_offset, (float) ((apps_len * line_h) - (h - prompt_h) + padding));
 
     BeginDrawing();
     ClearBackground(BACKGROUND_COLOR);
 
-    DrawRectangle(0, 0, w, prompt_h, PROMPT_BACKGROUND_COLOR);
+    DrawRectangle(0, 0, WINDOW_W, PROMPT_H, PROMPT_BACKGROUND_COLOR);
 
     const char *prompt = "search: ";
     auto prompt_text_color = TEXT_COLOR;
@@ -325,31 +435,37 @@ int main(void)
       prompt_text_color = RAYWHITE;
     }
 
-    DrawText(prompt, padding, (prompt_h - font_size) / 2, font_size, prompt_text_color);
+    DrawText(prompt, PADDING, (PROMPT_H - FONT_SIZE) / 2, FONT_SIZE, prompt_text_color);
 
-    const int start_idx = std::max(0, (int) (scroll_offset / line_h));
-    const int end_idx = std::min((int) (apps_len), (int) ((scroll_offset + (h - prompt_h)) / line_h));
+    int y = PROMPT_H + PADDING - (int) ((int) scroll_offset % LINE_H);
 
-    int y = prompt_h + padding - (int) ((int) scroll_offset % line_h);
-    for (int i = start_idx; i < end_idx; ++i) {
-      const auto &[name, exec] = apps[filtered_apps[i]];
-      if (GetMouseY() > y && GetMouseY() < y + line_h) {
-        DrawRectangle(0, y, w, line_h, HIGHLIGHT_COLOR);
-
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-          launch_application(exec);
-          goto end;
-        }
-      }
-
-      DrawText(name.c_str(), padding, y, font_size, TEXT_COLOR);
-      y += line_h;
+    if (no_matches) {
+      DrawRectangle(0, y, WINDOW_W, LINE_H, BACKGROUND_COLOR);
+      DrawText("[no matches]", PADDING, y, FONT_SIZE, TEXT_COLOR);
+    } else {
+	    const int start_idx = std::max(0, (int) (scroll_offset / LINE_H));
+	    const int end_idx = std::min((int) (apps_len), (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
+	
+	    for (int i = start_idx; i < end_idx; ++i) {
+	      const auto &[name, exec] = draw_all_apps ? apps[i] : apps[filtered_apps[i]];
+	      const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
+	      if (lcursor == i or hovered) {
+	        DrawRectangle(0, y, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
+	        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+	          launch_application(exec);
+	          goto end;
+	        }
+	      }
+	
+	      DrawText(name.c_str(), PADDING, y, FONT_SIZE, TEXT_COLOR);
+	      y += LINE_H;
+	    }
     }
 
-    if (apps_len * line_h > (h - prompt_h)) {
-      const float scrollbar_h = (h - prompt_h) / (float) (apps_len * line_h) * (h - prompt_h);
-      const float scrollbar_y = scroll_offset / (float) ((apps_len * line_h) - (h - prompt_h)) * ((h - prompt_h) - scrollbar_h);
-      DrawRectangle(w - 20, prompt_h + scrollbar_y, 10, scrollbar_h, SCROLLBAR_COLOR);
+    if (apps_len * LINE_H > (WINDOW_H - PROMPT_H)) {
+      const float scrollbar_h = (WINDOW_H - PROMPT_H) / (float) (apps_len * LINE_H) * (WINDOW_H - PROMPT_H);
+      const float scrollbar_y = scroll_offset / (float) ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H)) * ((WINDOW_H - PROMPT_H) - scrollbar_h);
+      DrawRectangle(WINDOW_W - 20, PROMPT_H + scrollbar_y, 10, scrollbar_h, SCROLLBAR_COLOR);
     }
 
     EndDrawing();
