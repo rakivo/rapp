@@ -229,6 +229,7 @@ static std::vector<app_t> apps;
 static std::vector<size_t> filtered_apps;
 
 static bool no_matches;
+static bool draw_all_apps;
 
 static off_t lcursor;
 static off_t visible_start_idx;
@@ -249,7 +250,12 @@ static double last_n_press_time = 0.0;
 static bool p_repeat_active = false;
 static double last_p_press_time = 0.0;
 
-void filter_apps(void)
+static inline const app_t &get_app(size_t idx)
+{
+  return draw_all_apps ? apps[idx] : apps[filtered_apps[idx]];
+}
+
+static inline void filter_apps(void)
 {
   if (!input_text.empty()) {
     filtered_apps.clear();
@@ -332,7 +338,7 @@ static inline void handle_key_repeat(bool key_down,
   }
 }
 
-static void handle_keys(void)
+static bool handle_keys(void)
 {
   auto ch = GetCharPressed();
   while (ch > 0) {
@@ -367,6 +373,14 @@ static void handle_keys(void)
                       p_repeat_active,
                       go_prev);
   }
+
+  if (IsKeyPressed(KEY_ENTER)) {
+    const auto &exec = get_app(lcursor).exec;
+    launch_application(exec);
+    return true;
+  }
+
+  return false;
 }
 
 static void parse_apps(void)
@@ -416,10 +430,10 @@ int main(void)
   input_text.reserve(256);
 
   while (!WindowShouldClose()) {
-    const auto draw_all_apps = filtered_apps.empty() && !no_matches;
     apps_len = draw_all_apps ? apps.size() : filtered_apps.size();
+    draw_all_apps = filtered_apps.empty() && !no_matches;
 
-    handle_keys();
+    if (handle_keys()) goto end;
 
     // handle mouse wheel
     {
@@ -453,7 +467,7 @@ int main(void)
 	    const int end_idx = std::min((int) (apps_len), (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
 	
 	    for (int i = start_idx; i < end_idx; ++i) {
-	      const auto &[name, exec] = draw_all_apps ? apps[i] : apps[filtered_apps[i]];
+	      const auto &[name, exec] = get_app(i);
 	      const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
 	      if (lcursor == i or hovered) {
 	        DrawRectangle(0, y, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
