@@ -266,6 +266,7 @@ void filter_apps(void)
 
     no_matches = filtered_apps.empty();
   } else {
+    no_matches = false;
     filtered_apps.clear();
   }
 }
