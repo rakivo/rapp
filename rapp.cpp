@@ -68,12 +68,6 @@ struct app_t {
 std::vector<std::string_view>
 split(const char *str, size_t size, char delim);
 
-constexpr std::array<const char *, 3> SEARCH_PATHS = {
-  "/usr/share/applications",
-  "/usr/local/share/applications",
-  "~/.local/share/applications"
-};
-
 constexpr Color TEXT_COLOR              = {209, 184, 151, 0xFF};
 constexpr Color ACCENT_COLOR            = {100, 150, 170, 0xFF};
 constexpr Color HIGHLIGHT_COLOR         = { 30,  50,  57, 0xFF};
@@ -246,6 +240,15 @@ static float scroll_offset;
 
 static size_t apps_len;
 
+static bool backspace_repeat_active = false;
+static double last_backspace_press_time = 0.0;
+
+static bool n_repeat_active = false;
+static double last_n_press_time = 0.0;
+
+static bool p_repeat_active = false;
+static double last_p_press_time = 0.0;
+
 void filter_apps(void)
 {
   if (!input_text.empty()) {
@@ -328,12 +331,53 @@ static inline void handle_key_repeat(bool key_down,
   }
 }
 
-int main(void)
+static void handle_keys(void)
+{
+  auto ch = GetCharPressed();
+  while (ch > 0) {
+    if (ch >= 32 && ch <= 125) {
+      input_text += (char)(ch);
+    }
+
+    ch = GetCharPressed();
+    filter_apps();
+  }
+
+  visible_start_idx = (int) (scroll_offset / LINE_H);
+  visible_end_idx = (int) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
+  lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
+
+  handle_key_repeat(IsKeyDown(KEY_BACKSPACE),
+                    IsKeyPressed(KEY_BACKSPACE),
+                    last_backspace_press_time,
+                    backspace_repeat_active,
+                    handle_backspace);
+
+  if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
+    handle_key_repeat(IsKeyDown(KEY_N),
+                      IsKeyPressed(KEY_N),
+                      last_n_press_time,
+                      n_repeat_active,
+                      go_next);
+
+    handle_key_repeat(IsKeyDown(KEY_P),
+                      IsKeyPressed(KEY_P),
+                      last_p_press_time,
+                      p_repeat_active,
+                      go_prev);
+  }
+}
+
+static void parse_apps(void)
 {
   size_t apps_count = 0;
   std::unordered_set<std::string> seen_names;
 
-  for (const auto &dir: SEARCH_PATHS) {
+  for (const auto &dir: {
+    "/usr/share/applications",
+    "/usr/local/share/applications",
+    "~/.local/share/applications"
+  }) {
     auto path = fs::absolute(fs::path(dir));
     if (!fs::is_directory(path)) continue;
     for (const auto &e: fs::directory_iterator(path)) {
@@ -352,7 +396,10 @@ int main(void)
       }
     }
   }
+}
 
+int main(void)
+{
   SetTargetFPS(60);
   SetConfigFlags(FLAG_MSAA_4X_HINT);
   InitWindow(WINDOW_W, WINDOW_H, "rapp");
@@ -363,57 +410,15 @@ int main(void)
 
   SetWindowPosition((monitor_w - WINDOW_W) / 2, (monitor_h - WINDOW_H) / 2);
 
+  parse_apps();
+
   input_text.reserve(256);
-
-  auto backspace_repeat_active = false;
-  double last_backspace_press_time = 0.0;
-
-  auto n_repeat_active = false;
-  double last_n_press_time = 0.0;
-
-  auto p_repeat_active = false;
-  double last_p_press_time = 0.0;
 
   while (!WindowShouldClose()) {
     const auto draw_all_apps = filtered_apps.empty() && !no_matches;
     apps_len = draw_all_apps ? apps.size() : filtered_apps.size();
 
-    // handle keys
-    {
-	    auto ch = GetCharPressed();
-	    while (ch > 0) {
-	      if (ch >= 32 && ch <= 125) {
-	        input_text += (char) (ch);
-	      }
-	
-	      ch = GetCharPressed();
-	      filter_apps();
-	    }
-	
-	    visible_start_idx = (int) (scroll_offset / LINE_H);
-	    visible_end_idx = (int) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
-	    lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
-	
-	    handle_key_repeat(IsKeyDown(KEY_BACKSPACE),
-	                      IsKeyPressed(KEY_BACKSPACE),
-	                      last_backspace_press_time,
-	                      backspace_repeat_active,
-	                      handle_backspace);
-	
-	    if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
-	      handle_key_repeat(IsKeyDown(KEY_N),
-	                        IsKeyPressed(KEY_N),
-	                        last_n_press_time,
-	                        n_repeat_active,
-	                        go_next);
-	
-	      handle_key_repeat(IsKeyDown(KEY_P),
-	                        IsKeyPressed(KEY_P),
-	                        last_p_press_time,
-	                        p_repeat_active,
-	                        go_prev);
-	    }
-    }
+    handle_keys();
 
     // handle mouse wheel
     {
