@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include "raylib.h"
+#include "font.h"
 
 namespace fs = std::filesystem;
 
@@ -76,7 +77,8 @@ constexpr Color BACKGROUND_COLOR        = {  6,  35,  41, 0xFF};
 constexpr Color PROMPT_BACKGROUND_COLOR = { 30,  30,  30, 0xFF};
 
 constexpr int PADDING = 20;
-constexpr int FONT_SIZE = 20;
+constexpr int FONT_SIZE = 30;
+constexpr float SPACING = 1.0f;
 constexpr int LINE_H = FONT_SIZE + 10;
 
 constexpr float SCROLL_SPEED = 50.0;
@@ -416,6 +418,8 @@ int main(void)
   InitWindow(WINDOW_W, WINDOW_H, "rapp");
   SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor()));
 
+  const Font font = LoadFont_Font();
+
   const int m = GetCurrentMonitor();
   const int monitor_w = GetMonitorWidth(m), monitor_h = GetMonitorHeight(m);
 
@@ -451,13 +455,13 @@ int main(void)
       prompt_text_color = RAYWHITE;
     }
 
-    DrawText(prompt, PADDING, (PROMPT_H - FONT_SIZE) / 2, FONT_SIZE, prompt_text_color);
+    DrawTextEx(font, prompt, {PADDING, (PROMPT_H - FONT_SIZE) / 2}, FONT_SIZE, SPACING, prompt_text_color);
 
-    int y = PROMPT_H + PADDING - (int) ((int) scroll_offset % LINE_H);
+    int y = PROMPT_H + PADDING / 3;
 
     if (no_matches) {
       DrawRectangle(0, y, WINDOW_W, LINE_H, BACKGROUND_COLOR);
-      DrawText("[no matches]", PADDING, y, FONT_SIZE, TEXT_COLOR);
+      DrawTextEx(font, "[no matches]", {PADDING, (float) y}, FONT_SIZE, SPACING, TEXT_COLOR);
     } else {
 	    const int start_idx = std::max(0, (int) (scroll_offset / LINE_H));
 	    const int end_idx = std::min((int) (apps_len), (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
@@ -466,14 +470,14 @@ int main(void)
 	      const auto &[name, exec] = get_app(i);
 	      const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
 	      if (lcursor == i or hovered) {
-	        DrawRectangle(0, y, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
+	        DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
 	        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
 	          launch_application(exec);
 	          goto end;
 	        }
 	      }
 	
-	      DrawText(name.c_str(), PADDING, y, FONT_SIZE, TEXT_COLOR);
+        DrawTextEx(font, name.c_str(), {PADDING, (float) y}, FONT_SIZE, SPACING, TEXT_COLOR);
 	      y += LINE_H;
 	    }
     }
