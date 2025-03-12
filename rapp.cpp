@@ -248,7 +248,7 @@ static float scroll_offset;
 static size_t apps_len;
 
 #define KEYS_OR X(KEY_A) | X(KEY_E) | X(KEY_B) | X(KEY_F) | X(KEY_P) | X(KEY_N)
-#define ACTIONS X(delete) X(paste) X(delete_word) X(start) X(end) X(left) X(right) X(up) X(down)
+#define ACTIONS X(delete) X(paste) X(delete_word) X(start) X(end) X(left) X(word_left) X(right) X(word_right) X(up) X(down)
 #define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, up) X(KEY_N, down)
 
 #define DEFINE_REPEAT_KEY(action) \
@@ -410,6 +410,22 @@ static inline void pcursor_right(void)
   if (pcursor < prompt.size()) pcursor++;
 }
 
+static inline void pcursor_word_left(void)
+{
+  int r = pcursor;
+  while (r > 0 &&  isspace(prompt[--r]));
+  while (r > 0 && !isspace(prompt[--r]));
+  pcursor = r;
+}
+
+static inline void pcursor_word_right(void)
+{
+  int l = pcursor, n = prompt.size();
+  while (l < n &&  isspace(prompt[l++]));
+  while (l < n && !isspace(prompt[l++]));
+  pcursor = l;
+}
+
 static inline void pcursor_up(void)
 {
   if (!lcursor_visible) {
@@ -466,10 +482,10 @@ static inline void handle_key_repeat(int key,
 
 static bool handle_keys(void)
 {
-  auto ch = GetCharPressed();
+  char ch = GetCharPressed();
   while (ch > 0) {
     if (ch >= 32 && ch <= 125) {
-      prompt += tolower((char) (ch));
+      prompt.insert(pcursor, 1, ch);
     }
 
     ch = GetCharPressed();
@@ -494,7 +510,12 @@ static bool handle_keys(void)
 
   HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
 
-  if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
+  if (IsKeyDown(KEY_LEFT_ALT)) {
+    HANDLE_KEY_REPEAT(KEY_B, word_left);
+    HANDLE_KEY_REPEAT(KEY_F, word_right);
+  }
+
+  else if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
     HANDLE_KEY_REPEAT(KEY_Y, paste);
     HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word);
 #define X HANDLE_KEY_REPEAT
