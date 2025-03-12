@@ -2,7 +2,7 @@ builddir = build
 
 cxx = c++
 std = -std=gnu++20 # designated initializers, constexpr
-libs = -l:'libraylib.a'
+libs = -l:'libraylib.a' -lX11
 libpaths = -L./thirdparty/raylib/lib
 wflags = -Wno-missing-field-initializers
 iflags = -Ithirdparty/raylib/include

@@ -6,6 +6,11 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+#define Font XFont
+  #include <X11/Xlib.h>
+  #include <X11/Xatom.h>
+#undef Font
+
 #include <array>
 #include <vector>
 #include <algorithm>
@@ -147,7 +152,7 @@ const app_t app_t::parse(const char *file_path, bool *ok)
   const auto file = file_t::read(file_path, &ok_);
 
   if (file.size == 0) {
-    if (!ok) {
+    if (!ok_) {
       eprintf("could not read file: %s\n", file_path);
     }
     *ok = ok_;
@@ -228,6 +233,9 @@ void launch_application(const std::string &command)
   }
 }
 
+static Window window;
+static Display *display;
+
 static std::string prompt;
 
 static std::vector<app_t> apps;
@@ -235,7 +243,7 @@ static std::vector<size_t> filtered_apps;
 
 static bool no_matches, draw_all_apps;
 
-static size_t lcursor, pcursor = 256;
+static size_t lcursor, pcursor;
 static size_t visible_start_idx, visible_end_idx;
 
 static bool lcursor_visible;
@@ -244,7 +252,8 @@ static float scroll_offset;
 
 static size_t apps_len;
 
-#define ACTIONS X(delete) X(delete_word) X(start) X(end) X(left) X(right) X(prev) X(next)
+#define KEYS_OR X(KEY_A) | X(KEY_E) | X(KEY_B) | X(KEY_F) | X(KEY_P) | X(KEY_N)
+#define ACTIONS X(delete) X(paste) X(delete_word) X(start) X(end) X(left) X(right) X(prev) X(next)
 #define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, prev) X(KEY_N, next)
 
 #define DEFINE_REPEAT_KEY(action) \
@@ -278,6 +287,66 @@ static inline void filter_apps(void)
   }
 }
 
+static std::string_view get_clipboard(bool *ok)
+{
+  Atom clipboard = XInternAtom(display, "CLIPBOARD", False);
+  Atom UTF8_string = XInternAtom(display, "UTF8_STRING", False);
+  Atom target_property = XInternAtom(display, "XSEL_DATA", False);
+
+  Window owner = XGetSelectionOwner(display, clipboard);
+  if (!owner) {
+    eprintf("no clipboard owner\n");
+    XCloseDisplay(display);
+		*ok = false;
+    return {};
+  }
+
+  XConvertSelection(display, clipboard, UTF8_string, target_property, window, CurrentTime);
+  XFlush(display);
+
+  XEvent event;
+  auto success = false;
+  std::string_view ret;
+  while (true) {
+    XNextEvent(display, &event);
+    if (event.type == SelectionNotify && event.xselection.selection == clipboard && event.xselection.property) {
+      Atom type;
+      int format;
+      unsigned long itemCount, bytesAfter;
+      unsigned char *data = NULL;
+
+      XGetWindowProperty(display, window, target_property, 0, ~0, False,
+                         AnyPropertyType, &type, &format, &itemCount,
+                         &bytesAfter, &data);
+
+      if (data && type == UTF8_string) {
+        ret = (char *) data;
+        success = true;
+      }
+    }
+    break;
+  }
+
+  if (!success) {
+    eprintf("failed to retrieve clipboard text\n");
+		*ok = false;
+    return {};
+  }
+
+  return ret;
+}
+
+static inline void pcursor_paste(void)
+{
+	auto ok = true;
+	const auto clipboard = get_clipboard(&ok);
+	if (ok) {
+		prompt += clipboard;
+		pcursor += clipboard.size();
+		free(const_cast<char *>(clipboard.data()));
+	}
+}
+
 static inline void pcursor_delete(void)
 {
   if (!prompt.empty()) {
@@ -299,7 +368,7 @@ static inline void pcursor_delete_word(void)
 		if (isspace(prompt[r])) break;
 	}
 	prompt.erase(r, pcursor);
-	pcursor = r == 0 ? 256 : r;
+	pcursor = r;
   filter_apps();
 }
 
@@ -408,6 +477,7 @@ static bool handle_keys(void)
 	HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
 
   if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
+		HANDLE_KEY_REPEAT(KEY_Y, paste);
 		HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word);
 #define X HANDLE_KEY_REPEAT
 		MOVEMENTS
@@ -455,6 +525,14 @@ static void parse_apps(void)
 
 int main(void)
 {
+  display = XOpenDisplay(NULL);
+	window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0, 1, 1, 0, 0, 0);
+
+  if (!display) {
+    eprintf("could not open X display\n");
+    return 1;
+  }
+
   SetTargetFPS(60);
   SetConfigFlags(FLAG_MSAA_4X_HINT);
   InitWindow(WINDOW_W, WINDOW_H, "rapp");
@@ -541,6 +619,8 @@ int main(void)
 
 end:
   CloseWindow();
+	XDestroyWindow(display, window);
+  XCloseDisplay(display);
 
   return 0;
 }
