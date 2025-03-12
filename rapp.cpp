@@ -244,7 +244,7 @@ static float scroll_offset;
 
 static size_t apps_len;
 
-#define ACTIONS X(delete) X(start) X(end) X(left) X(right) X(prev) X(next)
+#define ACTIONS X(delete) X(delete_word) X(start) X(end) X(left) X(right) X(prev) X(next)
 #define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, prev) X(KEY_N, next)
 
 #define DEFINE_REPEAT_KEY(action) \
@@ -287,9 +287,20 @@ static inline void pcursor_delete(void)
 			prompt.erase(pcursor, 1);
 		}
 
-    filter_apps();
 		pcursor--;
+    filter_apps();
   }
+}
+
+static inline void pcursor_delete_word(void)
+{
+	int r = pcursor;
+	while (r --> 1) {
+		if (isspace(prompt[r])) break;
+	}
+	prompt.erase(r, pcursor);
+	pcursor = r == 0 ? 256 : r;
+  filter_apps();
 }
 
 static inline void pcursor_start(void)
@@ -397,6 +408,7 @@ static bool handle_keys(void)
 	HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
 
   if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
+		HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word);
 #define X HANDLE_KEY_REPEAT
 		MOVEMENTS
 #undef X
