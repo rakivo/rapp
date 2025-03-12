@@ -248,8 +248,8 @@ static float scroll_offset;
 static size_t apps_len;
 
 #define KEYS_OR X(KEY_A) | X(KEY_E) | X(KEY_B) | X(KEY_F) | X(KEY_P) | X(KEY_N)
-#define ACTIONS X(delete) X(paste) X(delete_word) X(start) X(end) X(left) X(right) X(prev) X(next)
-#define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, prev) X(KEY_N, next)
+#define ACTIONS X(delete) X(paste) X(delete_word) X(start) X(end) X(left) X(right) X(up) X(down)
+#define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, up) X(KEY_N, down)
 
 #define DEFINE_REPEAT_KEY(action) \
   static bool pcursor_##action##_repeat_active; \
@@ -412,7 +412,7 @@ static inline void pcursor_right(void)
   if (pcursor < prompt.size()) pcursor++;
 }
 
-static inline void pcursor_prev(void)
+static inline void pcursor_up(void)
 {
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
@@ -424,7 +424,7 @@ static inline void pcursor_prev(void)
   }
 }
 
-static inline void pcursor_next(void)
+static inline void pcursor_down(void)
 {
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
