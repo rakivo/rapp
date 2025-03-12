@@ -346,7 +346,7 @@ std::string_view trim(const char *str, size_t len)
 {
   const char *end = str + len;
 
-  for (; str < end && isspace(*str); str++);
+  for (; str < end && isspace(*str);       str++);
   for (; end > str && isspace(*(end - 1)); end--);
 
   return std::string_view(str, (size_t) (end - str));
@@ -384,9 +384,7 @@ static inline void pcursor_delete(void)
 static inline void pcursor_delete_word(void)
 {
   int r = pcursor;
-  while (r --> 1) {
-    if (isspace(prompt[r])) break;
-  }
+  while (r --> 1 && !isspace(prompt[r]));
   prompt.erase(r, pcursor);
   pcursor = r;
   filter_apps();
