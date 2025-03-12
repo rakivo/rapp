@@ -595,7 +595,7 @@ int main(void)
 	      const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
 	      if (lcursor == (size_t) i or hovered) {
 	        DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
-	        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+	        if (hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
 	          launch_application(exec);
 	          goto end;
 	        }
