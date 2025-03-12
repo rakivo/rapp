@@ -26,7 +26,12 @@ struct file_t {
   const std::string_view sv;
   size_t size;
 
-  inline constexpr file_t(const std::string_view sv, off_t size) noexcept
+  inline constexpr
+	file_t(void) noexcept
+    : sv(""), size(0) {}
+
+  inline constexpr
+	file_t(const std::string_view sv, off_t size) noexcept
     : sv(sv), size(size) {}
 
   inline constexpr char
@@ -70,47 +75,46 @@ constexpr Color BACKGROUND_COLOR        = {  6,  35,  41, 0xFF};
 constexpr Color PROMPT_BACKGROUND_COLOR = { 30,  30,  30, 0xFF};
 
 constexpr int PADDING = 20;
-constexpr int FONT_SIZE = 30;
 constexpr float SPACING = 1.0;
-constexpr int PROMPT_FONT_SIZE = 22;
-constexpr int LINE_H = FONT_SIZE + 10;
 
-constexpr float SCROLL_SPEED = 50.0;
+constexpr int FONT_SIZE = 30;
+constexpr int PROMPT_FONT_SIZE = 22;
 
 constexpr int WINDOW_W = 800;
 constexpr int WINDOW_H = 600;
-
 constexpr float PROMPT_H = 40.0;
+constexpr int LINE_H = FONT_SIZE + 10;
+constexpr int PCURSOR_W = PROMPT_FONT_SIZE / 2;
+constexpr int PCURSOR_H = PROMPT_FONT_SIZE / 0.9;
 
+constexpr float SCROLL_SPEED = 50.0;
 constexpr float INITIAL_KEY_DELAY = 0.5;
 constexpr float REPEAT_KEY_INTERVAL = 0.125;
 
 const file_t file_t::read(const char *file_path, bool *ok)
 {
-  static const file_t empty = {"", 0};
-
   int fd = open(file_path, O_RDONLY, (mode_t) 0400);
   if (fd == -1) {
     *ok = false;
-    return empty;
+    return {};
   }
 
   struct stat file_info = {0};
   if (fstat(fd, &file_info) == -1) {
     *ok = false;
-    return empty;
+    return {};
   }
 
   const off_t size = file_info.st_size;
   if (size == 0) {
-    return empty;
+    return {};
   }
 
   char *ptr = (char *) mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
   if (ptr == MAP_FAILED) {
     close(fd);
     *ok = false;
-    return empty;
+    return {};
   }
 
   close(fd);
@@ -150,7 +154,7 @@ const app_t app_t::parse(const char *file_path, bool *ok)
   }
 
   std::string exec, name;
-  for (auto &line: split(file.sv, '\n')) {
+  for (const auto &line: split(file.sv, '\n')) {
     if (!name.empty() && !exec.empty()) break;
 
     if (line.find("Name=") == 0) {
@@ -174,6 +178,8 @@ void launch_application(const std::string &command)
 
   std::string arg = {};
   std::vector<std::string> args = {};
+	args.reserve(cleaned_command.size());
+
   for (char c: cleaned_command) {
     if (c == ' ') {
       if (!arg.empty()) {
@@ -226,12 +232,10 @@ static std::string input;
 static std::vector<app_t> apps;
 static std::vector<size_t> filtered_apps;
 
-static bool no_matches;
-static bool draw_all_apps;
+static bool no_matches, draw_all_apps;
 
-static off_t lcursor;
-static off_t visible_start_idx;
-static off_t visible_end_idx;
+static size_t lcursor, pcursor = 256;
+static size_t visible_start_idx, visible_end_idx;
 
 static bool lcursor_visible;
 
@@ -250,7 +254,7 @@ static double last_p_press_time;
 
 static inline const app_t &get_app(size_t idx)
 {
-  return draw_all_apps ? apps[idx] : apps[filtered_apps[idx]];
+  return no_matches ? apps[idx] : apps[filtered_apps[idx]];
 }
 
 static inline void filter_apps(void)
@@ -276,6 +280,7 @@ static inline void handle_backspace(void)
   if (!input.empty()) {
     input.pop_back();
     filter_apps();
+		pcursor--;
   }
 }
 
@@ -296,7 +301,7 @@ static inline void go_next(void)
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
   } else {
-    lcursor = std::min((off_t) apps_len - 1, lcursor + 1);
+    lcursor = std::min(apps_len - 1, lcursor + 1);
     if (lcursor > visible_end_idx) {
       scroll_offset += LINE_H;
     }
@@ -342,10 +347,16 @@ static bool handle_keys(void)
 
     ch = GetCharPressed();
     filter_apps();
+
+		if (pcursor == 256) {
+			pcursor = 1;
+		} else {
+			pcursor++;
+		}
   }
 
-  visible_start_idx = (int) (scroll_offset / LINE_H);
-  visible_end_idx = (int) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
+  visible_start_idx = (size_t) (scroll_offset / LINE_H);
+  visible_end_idx = (size_t) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
   lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
 
   handle_key_repeat(IsKeyDown(KEY_BACKSPACE),
@@ -452,7 +463,12 @@ int main(void)
       prompt_text_color = RAYWHITE;
     }
 
-    DrawTextEx(prompt_font, prompt, {PADDING, (PROMPT_H - PROMPT_FONT_SIZE) / 2}, PROMPT_FONT_SIZE, SPACING, prompt_text_color);
+		const auto mid_prompt_y = (PROMPT_H - PROMPT_FONT_SIZE) / 2;
+
+    DrawTextEx(prompt_font, prompt, {PADDING, mid_prompt_y}, PROMPT_FONT_SIZE, SPACING, prompt_text_color);
+
+		// cursor
+		DrawRectangle(PADDING + PCURSOR_W * pcursor, mid_prompt_y, PCURSOR_W, PCURSOR_H, TEXT_COLOR);
 
     int y = PROMPT_H + PADDING / 3;
 
@@ -461,12 +477,12 @@ int main(void)
       DrawTextEx(font, "[no matches]", {PADDING, (float) y}, FONT_SIZE, SPACING, TEXT_COLOR);
     } else {
 	    const int start_idx = std::max(0, (int) (scroll_offset / LINE_H));
-	    const int end_idx = std::min((int) (apps_len), (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
+	    const int end_idx = std::min((int) apps_len, (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
 	
 	    for (int i = start_idx; i < end_idx; ++i) {
 	      const auto &[name, exec] = get_app(i);
 	      const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
-	      if (lcursor == i or hovered) {
+	      if (lcursor == (size_t) i or hovered) {
 	        DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
 	        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
 	          launch_application(exec);
