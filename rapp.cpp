@@ -341,9 +341,10 @@ static inline void pcursor_paste(void)
 	auto ok = true;
 	const auto clipboard = get_clipboard(&ok);
 	if (ok) {
-		prompt += clipboard;
+		prompt.insert(pcursor, clipboard);
 		pcursor += clipboard.size();
 		free(const_cast<char *>(clipboard.data()));
+		filter_apps();
 	}
 }
 
