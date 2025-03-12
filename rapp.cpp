@@ -244,26 +244,16 @@ static float scroll_offset;
 
 static size_t apps_len;
 
-static bool cursor_start_repeat_active;
-static double last_cursor_start_press_time;
+#define ACTIONS X(delete) X(start) X(end) X(left) X(right) X(prev) X(next)
+#define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, prev) X(KEY_N, next)
 
-static bool cursor_end_repeat_active;
-static double last_cursor_end_press_time;
+#define DEFINE_REPEAT_KEY(action) \
+	static bool pcursor_##action##_repeat_active; \
+	static double last_pcursor_##action##_press_time;
 
-static bool cursor_left_repeat_active;
-static double last_cursor_left_press_time;
-
-static bool cursor_right_repeat_active;
-static double last_cursor_right_press_time;
-
-static bool backspace_repeat_active;
-static double last_backspace_press_time;
-
-static bool pcursor_next_repeat_active;
-static double last_pcursor_next_press_time;
-
-static bool pcursor_prev_repeat_active;
-static double last_pcursor_prev_press_time;
+#define X DEFINE_REPEAT_KEY
+	ACTIONS
+#undef X
 
 static inline const app_t &get_app(size_t idx)
 {
@@ -288,7 +278,7 @@ static inline void filter_apps(void)
   }
 }
 
-static inline void handle_backspace(void)
+static inline void pcursor_delete(void)
 {
   if (!prompt.empty()) {
 		if (pcursor == prompt.size()) {
@@ -298,7 +288,6 @@ static inline void handle_backspace(void)
 		}
 
     filter_apps();
-
 		pcursor--;
   }
 }
@@ -399,41 +388,18 @@ static bool handle_keys(void)
   visible_end_idx = (size_t) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
   lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
 
-  handle_key_repeat(KEY_BACKSPACE,
-                    last_backspace_press_time,
-                    backspace_repeat_active,
-                    handle_backspace);
+#define HANDLE_KEY_REPEAT(key, action) \
+  handle_key_repeat(key, \
+                    last_pcursor_##action##_press_time, \
+                    pcursor_##action##_repeat_active, \
+                    pcursor_##action);
+
+	HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
 
   if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
-    handle_key_repeat(KEY_A,
-                      last_cursor_start_press_time,
-                      cursor_start_repeat_active,
-                      pcursor_start);
-
-    handle_key_repeat(KEY_E,
-                      last_cursor_end_press_time,
-                      cursor_end_repeat_active,
-                      pcursor_end);
-
-    handle_key_repeat(KEY_B,
-                      last_cursor_left_press_time,
-                      cursor_left_repeat_active,
-                      pcursor_left);
-
-    handle_key_repeat(KEY_F,
-                      last_cursor_right_press_time,
-                      cursor_right_repeat_active,
-                      pcursor_right);
-
-    handle_key_repeat(KEY_N,
-                      last_pcursor_next_press_time,
-                      pcursor_next_repeat_active,
-                      pcursor_next);
-
-    handle_key_repeat(KEY_P,
-                      last_pcursor_prev_press_time,
-                      pcursor_prev_repeat_active,
-                      pcursor_prev);
+#define X HANDLE_KEY_REPEAT
+		MOVEMENTS
+#undef X
   }
 
   if (IsKeyPressed(KEY_ENTER)) {
