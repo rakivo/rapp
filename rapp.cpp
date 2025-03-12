@@ -1,7 +1,4 @@
 #include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <assert.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -11,9 +8,7 @@
   #include <X11/Xatom.h>
 #undef Font
 
-#include <array>
 #include <vector>
-#include <algorithm>
 #include <filesystem>
 #include <string_view>
 #include <unordered_set>
@@ -511,7 +506,9 @@ static void parse_apps(void)
 
       auto ok = true;
       auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
-      std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+			for (auto &c: name) c = tolower(c);
+
       if (ok && !name.empty() && !exec.empty()) {
         if (seen_names.count(name) == 0) {
           apps.emplace_back(name, exec);

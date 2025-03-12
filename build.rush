@@ -9,7 +9,7 @@ iflags = -Ithirdparty/raylib/include
 lflags = $libpaths $libs
 cflags_ = $std $wflags $iflags -Wall -Wextra -Wpedantic
 cflags = $cflags_ -O1 -fsanitize=address
-cflags_release = $cflags_ -O3 -DNDEBUG
+cflags_release = $cflags_ -O3 -DNDEBUG -static-libstdc++
 
 rule cxx
   depfile = $out.d
