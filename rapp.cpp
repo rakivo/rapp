@@ -68,6 +68,7 @@ struct app_t {
 };
 
 constexpr Color TEXT_COLOR              = {209, 184, 151, 0xFF};
+constexpr Color PCURSOR_COLOR           = {209, 184, 151, 0xAA};
 constexpr Color ACCENT_COLOR            = {100, 150, 170, 0xFF};
 constexpr Color HIGHLIGHT_COLOR         = { 30,  50,  57, 0xFF};
 constexpr Color SCROLLBAR_COLOR         = { 50,  70,  80, 0xFF};
@@ -227,7 +228,7 @@ void launch_application(const std::string &command)
   }
 }
 
-static std::string input;
+static std::string prompt;
 
 static std::vector<app_t> apps;
 static std::vector<size_t> filtered_apps;
@@ -243,14 +244,26 @@ static float scroll_offset;
 
 static size_t apps_len;
 
+static bool cursor_start_repeat_active;
+static double last_cursor_start_press_time;
+
+static bool cursor_end_repeat_active;
+static double last_cursor_end_press_time;
+
+static bool cursor_left_repeat_active;
+static double last_cursor_left_press_time;
+
+static bool cursor_right_repeat_active;
+static double last_cursor_right_press_time;
+
 static bool backspace_repeat_active;
 static double last_backspace_press_time;
 
-static bool n_repeat_active;
-static double last_n_press_time;
+static bool pcursor_next_repeat_active;
+static double last_pcursor_next_press_time;
 
-static bool p_repeat_active;
-static double last_p_press_time;
+static bool pcursor_prev_repeat_active;
+static double last_pcursor_prev_press_time;
 
 static inline const app_t &get_app(size_t idx)
 {
@@ -259,11 +272,11 @@ static inline const app_t &get_app(size_t idx)
 
 static inline void filter_apps(void)
 {
-  if (!input.empty()) {
+  if (!prompt.empty()) {
     filtered_apps.clear();
     for (size_t i = 0; i < apps.size(); ++i) {
       const auto &[name, exec] = apps[i];
-      if (name.find(input) != std::string::npos) {
+      if (name.find(prompt) != std::string::npos) {
         filtered_apps.emplace_back(i);
       }
     }
@@ -277,14 +290,40 @@ static inline void filter_apps(void)
 
 static inline void handle_backspace(void)
 {
-  if (!input.empty()) {
-    input.pop_back();
+  if (!prompt.empty()) {
+		if (pcursor == prompt.size()) {
+	    prompt.pop_back();
+		} else {
+			prompt.erase(pcursor, 1);
+		}
+
     filter_apps();
+
 		pcursor--;
   }
 }
 
-static inline void go_prev(void)
+static inline void pcursor_start(void)
+{
+	pcursor ^= pcursor;
+}
+
+static inline void pcursor_end(void)
+{
+	pcursor = prompt.size();
+}
+
+static inline void pcursor_left(void)
+{
+	if (pcursor > 0) pcursor--;
+}
+
+static inline void pcursor_right(void)
+{
+	if (pcursor < prompt.size()) pcursor++;
+}
+
+static inline void pcursor_prev(void)
 {
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
@@ -296,7 +335,7 @@ static inline void go_prev(void)
   }
 }
 
-static inline void go_next(void)
+static inline void pcursor_next(void)
 {
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
@@ -308,13 +347,14 @@ static inline void go_next(void)
   }
 }
 
-static inline void handle_key_repeat(bool key_down,
-                                     bool key_pressed,
+static inline void handle_key_repeat(int key,
                                      double &last_press_time,
                                      bool &repeat_active,
                                      void (*action)(void))
 {
   const auto time = GetTime();
+  const auto key_down = IsKeyDown(key);
+  const auto key_pressed = IsKeyPressed(key);
 
   if (key_down) {
     if (!repeat_active) {
@@ -342,7 +382,7 @@ static bool handle_keys(void)
   auto ch = GetCharPressed();
   while (ch > 0) {
     if (ch >= 32 && ch <= 125) {
-      input += tolower((char) (ch));
+      prompt += tolower((char) (ch));
     }
 
     ch = GetCharPressed();
@@ -359,24 +399,41 @@ static bool handle_keys(void)
   visible_end_idx = (size_t) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
   lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
 
-  handle_key_repeat(IsKeyDown(KEY_BACKSPACE),
-                    IsKeyPressed(KEY_BACKSPACE),
+  handle_key_repeat(KEY_BACKSPACE,
                     last_backspace_press_time,
                     backspace_repeat_active,
                     handle_backspace);
 
   if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
-    handle_key_repeat(IsKeyDown(KEY_N),
-                      IsKeyPressed(KEY_N),
-                      last_n_press_time,
-                      n_repeat_active,
-                      go_next);
+    handle_key_repeat(KEY_A,
+                      last_cursor_start_press_time,
+                      cursor_start_repeat_active,
+                      pcursor_start);
 
-    handle_key_repeat(IsKeyDown(KEY_P),
-                      IsKeyPressed(KEY_P),
-                      last_p_press_time,
-                      p_repeat_active,
-                      go_prev);
+    handle_key_repeat(KEY_E,
+                      last_cursor_end_press_time,
+                      cursor_end_repeat_active,
+                      pcursor_end);
+
+    handle_key_repeat(KEY_B,
+                      last_cursor_left_press_time,
+                      cursor_left_repeat_active,
+                      pcursor_left);
+
+    handle_key_repeat(KEY_F,
+                      last_cursor_right_press_time,
+                      cursor_right_repeat_active,
+                      pcursor_right);
+
+    handle_key_repeat(KEY_N,
+                      last_pcursor_next_press_time,
+                      pcursor_next_repeat_active,
+                      pcursor_next);
+
+    handle_key_repeat(KEY_P,
+                      last_pcursor_prev_press_time,
+                      pcursor_prev_repeat_active,
+                      pcursor_prev);
   }
 
   if (IsKeyPressed(KEY_ENTER)) {
@@ -435,7 +492,7 @@ int main(void)
 
   parse_apps();
 
-  input.reserve(256);
+  prompt.reserve(256);
 
   while (!WindowShouldClose()) {
     apps_len = draw_all_apps ? apps.size() : filtered_apps.size();
@@ -455,20 +512,20 @@ int main(void)
 
     DrawRectangle(0, 0, WINDOW_W, PROMPT_H, PROMPT_BACKGROUND_COLOR);
 
-    const char *prompt = "search: ";
+    const char *prompt_text = "search: ";
     auto prompt_text_color = TEXT_COLOR;
 
-    if (!input.empty()) {
-      prompt = input.c_str();
+    if (!prompt.empty()) {
+      prompt_text = prompt.c_str();
       prompt_text_color = RAYWHITE;
     }
 
 		const auto mid_prompt_y = (PROMPT_H - PROMPT_FONT_SIZE) / 2;
 
-    DrawTextEx(prompt_font, prompt, {PADDING, mid_prompt_y}, PROMPT_FONT_SIZE, SPACING, prompt_text_color);
-
 		// cursor
-		DrawRectangle(PADDING + PCURSOR_W * pcursor, mid_prompt_y, PCURSOR_W, PCURSOR_H, TEXT_COLOR);
+		DrawRectangle(PADDING + PCURSOR_W * pcursor, mid_prompt_y, PCURSOR_W, PCURSOR_H, PCURSOR_COLOR);
+
+    DrawTextEx(prompt_font, prompt_text, {PADDING, mid_prompt_y}, PROMPT_FONT_SIZE, SPACING, prompt_text_color);
 
     int y = PROMPT_H + PADDING / 3;
 
