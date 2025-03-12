@@ -15,6 +15,7 @@
 
 #include "raylib.h"
 #include "font.h"
+#include "prompt-font.h"
 
 namespace fs = std::filesystem;
 
@@ -70,7 +71,8 @@ constexpr Color PROMPT_BACKGROUND_COLOR = { 30,  30,  30, 0xFF};
 
 constexpr int PADDING = 20;
 constexpr int FONT_SIZE = 30;
-constexpr float SPACING = 1.0f;
+constexpr float SPACING = 1.0;
+constexpr int PROMPT_FONT_SIZE = 22;
 constexpr int LINE_H = FONT_SIZE + 10;
 
 constexpr float SCROLL_SPEED = 50.0;
@@ -237,14 +239,14 @@ static float scroll_offset;
 
 static size_t apps_len;
 
-static bool backspace_repeat_active = false;
-static double last_backspace_press_time = 0.0;
+static bool backspace_repeat_active;
+static double last_backspace_press_time;
 
-static bool n_repeat_active = false;
-static double last_n_press_time = 0.0;
+static bool n_repeat_active;
+static double last_n_press_time;
 
-static bool p_repeat_active = false;
-static double last_p_press_time = 0.0;
+static bool p_repeat_active;
+static double last_p_press_time;
 
 static inline const app_t &get_app(size_t idx)
 {
@@ -412,7 +414,8 @@ int main(void)
   InitWindow(WINDOW_W, WINDOW_H, "rapp");
   SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor()));
 
-  const Font font = LoadFont_Font();
+  const Font font = LoadFont_Default();
+  const Font prompt_font = LoadFont_Prompt();
 
   const int m = GetCurrentMonitor();
   const int monitor_w = GetMonitorWidth(m), monitor_h = GetMonitorHeight(m);
@@ -449,7 +452,7 @@ int main(void)
       prompt_text_color = RAYWHITE;
     }
 
-    DrawTextEx(font, prompt, {PADDING, (PROMPT_H - FONT_SIZE) / 2}, FONT_SIZE, SPACING, prompt_text_color);
+    DrawTextEx(prompt_font, prompt, {PADDING, (PROMPT_H - PROMPT_FONT_SIZE) / 2}, PROMPT_FONT_SIZE, SPACING, prompt_text_color);
 
     int y = PROMPT_H + PADDING / 3;
 

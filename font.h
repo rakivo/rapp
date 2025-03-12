@@ -842,7 +842,7 @@ static GlyphInfo fontGlyphs_Font[95] = {
 };
 
 // Font loading function: Font
-static Font LoadFont_Font(void)
+static Font LoadFont_Default(void)
 {
     Font font = { 0 };
 
