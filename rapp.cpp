@@ -27,11 +27,11 @@ struct file_t {
   size_t size;
 
   inline constexpr
-	file_t(void) noexcept
+  file_t(void) noexcept
     : sv(""), size(0) {}
 
   inline constexpr
-	file_t(const std::string_view sv, off_t size) noexcept
+  file_t(const std::string_view sv, off_t size) noexcept
     : sv(sv), size(size) {}
 
   inline constexpr char
@@ -179,7 +179,7 @@ void launch_application(const std::string &command)
 
   std::string arg = {};
   std::vector<std::string> args = {};
-	args.reserve(cleaned_command.size());
+  args.reserve(cleaned_command.size());
 
   for (char c: cleaned_command) {
     if (c == ' ') {
@@ -252,11 +252,11 @@ static size_t apps_len;
 #define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, prev) X(KEY_N, next)
 
 #define DEFINE_REPEAT_KEY(action) \
-	static bool pcursor_##action##_repeat_active; \
-	static double last_pcursor_##action##_press_time;
+  static bool pcursor_##action##_repeat_active; \
+  static double last_pcursor_##action##_press_time;
 
 #define X DEFINE_REPEAT_KEY
-	ACTIONS
+  ACTIONS
 #undef X
 
 static inline const app_t &get_app(size_t idx)
@@ -292,7 +292,7 @@ static std::string_view get_clipboard(bool *ok)
   if (!owner) {
     eprintf("no clipboard owner\n");
     XCloseDisplay(display);
-		*ok = false;
+    *ok = false;
     return {};
   }
 
@@ -300,92 +300,116 @@ static std::string_view get_clipboard(bool *ok)
   XFlush(display);
 
   XEvent event;
-  auto success = false;
+  auto ok_ = false;
   std::string_view ret;
   while (true) {
     XNextEvent(display, &event);
-    if (event.type == SelectionNotify && event.xselection.selection == clipboard && event.xselection.property) {
+    if (event.type == SelectionNotify
+        && event.xselection.selection == clipboard
+        && event.xselection.property)
+    {
       Atom type;
-      int format;
-      unsigned long itemCount, bytesAfter;
       unsigned char *data = NULL;
 
-      XGetWindowProperty(display, window, target_property, 0, ~0, False,
-                         AnyPropertyType, &type, &format, &itemCount,
-                         &bytesAfter, &data);
+      int _format;
+      unsigned long _count, _bytes_after;
+
+      XGetWindowProperty(display,
+                         window,
+                         target_property,
+                         0, ~0, 0,
+                         AnyPropertyType,
+                         &type,
+                         &_format,
+                         &_count,
+                         &_bytes_after,
+                         &data);
 
       if (data && type == UTF8_string) {
         ret = (char *) data;
-        success = true;
+        ok_ = true;
       }
-    }
-    break;
+    } break;
   }
 
-  if (!success) {
+  if (!ok_) {
     eprintf("failed to retrieve clipboard text\n");
-		*ok = false;
+    *ok = false;
     return {};
   }
 
   return ret;
 }
 
+static inline
+std::string_view trim(const char *str, size_t len)
+{
+  const char *end = str + len;
+
+  for (; str < end && isspace(*str); str++);
+  for (; end > str && isspace(*(end - 1)); end--);
+
+  return std::string_view(str, (size_t) (end - str));
+}
+
 static inline void pcursor_paste(void)
 {
-	auto ok = true;
-	const auto clipboard = get_clipboard(&ok);
-	if (ok) {
-		prompt.insert(pcursor, clipboard);
-		pcursor += clipboard.size();
-		free(const_cast<char *>(clipboard.data()));
-		filter_apps();
-	}
+  auto ok = true;
+  const auto clipboard = get_clipboard(&ok);
+  if (ok) {
+    const auto n = clipboard.size();
+    const auto trimmed = trim(clipboard.data(), n);
+
+    prompt.insert(pcursor, trimmed);
+    pcursor += n;
+    free(const_cast<char *>(clipboard.data()));
+    filter_apps();
+  }
 }
 
 static inline void pcursor_delete(void)
 {
   if (!prompt.empty()) {
-		if (pcursor == prompt.size()) {
-	    prompt.pop_back();
-		} else {
-			prompt.erase(pcursor, 1);
-		}
+    if (pcursor == prompt.size()) {
+      prompt.pop_back();
+    } else {
+      prompt.erase(pcursor, 1);
+    }
 
-		pcursor--;
+    pcursor--;
     filter_apps();
   }
 }
 
 static inline void pcursor_delete_word(void)
 {
-	int r = pcursor;
-	while (r --> 1) {
-		if (isspace(prompt[r])) break;
-	}
-	prompt.erase(r, pcursor);
-	pcursor = r;
+  int r = pcursor;
+  while (r --> 1) {
+    if (isspace(prompt[r])) break;
+  }
+  prompt.erase(r, pcursor);
+  pcursor = r;
   filter_apps();
 }
 
 static inline void pcursor_start(void)
 {
-	pcursor ^= pcursor;
+  pcursor ^= pcursor;
 }
 
 static inline void pcursor_end(void)
 {
-	pcursor = prompt.size();
+  pcursor = prompt.size();
 }
 
 static inline void pcursor_left(void)
 {
-	if (pcursor > 0) pcursor--;
+  if (pcursor > 0) pcursor--;
 }
 
 static inline void pcursor_right(void)
 {
-	if (pcursor < prompt.size()) pcursor++;
+  if (pcursor < prompt.size()) pcursor++;
 }
 
 static inline void pcursor_prev(void)
@@ -453,11 +477,11 @@ static bool handle_keys(void)
     ch = GetCharPressed();
     filter_apps();
 
-		if (pcursor == 256) {
-			pcursor = 1;
-		} else {
-			pcursor++;
-		}
+    if (pcursor == 256) {
+      pcursor = 1;
+    } else {
+      pcursor++;
+    }
   }
 
   visible_start_idx = (size_t) (scroll_offset / LINE_H);
@@ -470,13 +494,13 @@ static bool handle_keys(void)
                     pcursor_##action##_repeat_active, \
                     pcursor_##action);
 
-	HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
+  HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
 
   if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
-		HANDLE_KEY_REPEAT(KEY_Y, paste);
-		HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word);
+    HANDLE_KEY_REPEAT(KEY_Y, paste);
+    HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word);
 #define X HANDLE_KEY_REPEAT
-		MOVEMENTS
+    MOVEMENTS
 #undef X
   }
 
@@ -507,7 +531,7 @@ static void parse_apps(void)
       auto ok = true;
       auto [name, exec] = app_t::parse(e.path().c_str(), &ok);
 
-			for (auto &c: name) c = tolower(c);
+      for (auto &c: name) c = tolower(c);
 
       if (ok && !name.empty() && !exec.empty()) {
         if (seen_names.count(name) == 0) {
@@ -524,7 +548,7 @@ static void parse_apps(void)
 int main(void)
 {
   display = XOpenDisplay(NULL);
-	window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0, 1, 1, 0, 0, 0);
+  window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0, 1, 1, 0, 0, 0);
 
   if (!display) {
     eprintf("could not open X display\n");
@@ -574,10 +598,10 @@ int main(void)
       prompt_text_color = RAYWHITE;
     }
 
-		const auto mid_prompt_y = (PROMPT_H - PROMPT_FONT_SIZE) / 2;
+    const auto mid_prompt_y = (PROMPT_H - PROMPT_FONT_SIZE) / 2;
 
-		// cursor
-		DrawRectangle(PADDING + PCURSOR_W * pcursor, mid_prompt_y, PCURSOR_W, PCURSOR_H, PCURSOR_COLOR);
+    // cursor
+    DrawRectangle(PADDING + PCURSOR_W * pcursor, mid_prompt_y, PCURSOR_W, PCURSOR_H, PCURSOR_COLOR);
 
     DrawTextEx(prompt_font, prompt_text, {PADDING, mid_prompt_y}, PROMPT_FONT_SIZE, SPACING, prompt_text_color);
 
@@ -587,23 +611,23 @@ int main(void)
       DrawRectangle(0, y, WINDOW_W, LINE_H, BACKGROUND_COLOR);
       DrawTextEx(font, "[no matches]", {PADDING, (float) y}, FONT_SIZE, SPACING, TEXT_COLOR);
     } else {
-	    const int start_idx = std::max(0, (int) (scroll_offset / LINE_H));
-	    const int end_idx = std::min((int) apps_len, (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
-	
-	    for (int i = start_idx; i < end_idx; ++i) {
-	      const auto &[name, exec] = get_app(i);
-	      const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
-	      if (lcursor == (size_t) i or hovered) {
-	        DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
-	        if (hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-	          launch_application(exec);
-	          goto end;
-	        }
-	      }
-	
+      const int start_idx = std::max(0, (int) (scroll_offset / LINE_H));
+      const int end_idx = std::min((int) apps_len, (int) ((scroll_offset + (WINDOW_H - PROMPT_H)) / LINE_H));
+  
+      for (int i = start_idx; i < end_idx; ++i) {
+        const auto &[name, exec] = get_app(i);
+        const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
+        if (lcursor == (size_t) i or hovered) {
+          DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
+          if (hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            launch_application(exec);
+            goto end;
+          }
+        }
+  
         DrawTextEx(font, name.c_str(), {PADDING, (float) y}, FONT_SIZE, SPACING, TEXT_COLOR);
-	      y += LINE_H;
-	    }
+        y += LINE_H;
+      }
     }
 
     if (apps_len * LINE_H > (WINDOW_H - PROMPT_H)) {
@@ -617,7 +641,7 @@ int main(void)
 
 end:
   CloseWindow();
-	XDestroyWindow(display, window);
+  XDestroyWindow(display, window);
   XCloseDisplay(display);
 
   return 0;
