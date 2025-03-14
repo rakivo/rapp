@@ -294,6 +294,10 @@ static inline void filter_apps(void)
     no_matches = false;
     filtered_apps.clear();
   }
+
+  lcursor ^= lcursor;
+  scroll_offset = 0.0;
+  lcursor_visible = true;
 }
 
 static std::string_view get_clipboard(bool *ok)
@@ -423,8 +427,9 @@ static inline void delete_whole_line(void)
 
 static inline void delete_word_left(void)
 {
+  if (pcursor == 0) return;
   int r = pcursor;
-  while (r --> 1 && !isspace(prompt[r]));
+  while (r > 1 && !isspace(prompt[--r]));
   prompt.erase(r, pcursor);
   pcursor = r;
   filter_apps();
@@ -433,6 +438,7 @@ static inline void delete_word_left(void)
 static inline void delete_word_right(void)
 {
   int l = pcursor, n = prompt.size();
+  if (n == 0) return;
 
   while (l < n && isspace(prompt[l++]));
 
@@ -548,16 +554,8 @@ static bool handle_keys(void)
     ch = GetCharPressed();
     filter_apps();
 
-    if (pcursor == 256) {
-      pcursor = 1;
-    } else {
-      pcursor++;
-    }
+    pcursor++;
   }
-
-  visible_start_idx = (size_t) (scroll_offset / LINE_H);
-  visible_end_idx = (size_t) ((scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H);
-  lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
 
 #define HANDLE_KEY_REPEAT(key, action) \
   handle_key_repeat(key, \
@@ -566,6 +564,8 @@ static bool handle_keys(void)
                     _pcursor::action);
 
   HANDLE_KEY_REPEAT(KEY_BACKSPACE, pop_back);
+
+  const auto old_len = filtered_apps.size();
 
   if (IsKeyDown(KEY_LEFT_ALT)) {
     HANDLE_KEY_REPEAT(KEY_B, word_left);
@@ -584,6 +584,12 @@ static bool handle_keys(void)
 #define X HANDLE_KEY_REPEAT
     MOVEMENTS
 #undef X
+
+    if (filtered_apps.size() != old_len) {
+      visible_start_idx = (size_t) (scroll_offset / LINE_H);
+      visible_end_idx = (size_t) (scroll_offset + (WINDOW_H - PROMPT_H - LINE_H)) / LINE_H;
+      lcursor_visible = (lcursor >= visible_start_idx && lcursor <= visible_end_idx);
+    }
   }
 
   if (IsKeyPressed(KEY_ENTER)) {
