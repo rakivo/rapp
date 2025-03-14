@@ -9,8 +9,11 @@
 #undef Font
 
 #include <vector>
+#include <fstream>
+#include <algorithm>
 #include <filesystem>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "raylib.h"
@@ -95,7 +98,7 @@ constexpr float REPEAT_KEY_INTERVAL = 0.12;
 
 const file_t file_t::read(const char *file_path, bool *ok)
 {
-  int fd = open(file_path, O_RDONLY, (mode_t) 0400);
+  int fd = open(file_path, O_RDONLY);
   if (fd == -1) {
     *ok = false;
     return {};
@@ -182,7 +185,7 @@ void launch_application(const std::string &command)
   std::vector<std::string> args = {};
   args.reserve(cleaned_command.size());
 
-  for (char c: cleaned_command) {
+  for (const auto &c: cleaned_command) {
     if (c == ' ') {
       if (!arg.empty()) {
         args.emplace_back(arg);
@@ -248,6 +251,9 @@ static float scroll_offset;
 
 static size_t apps_len;
 
+static std::string_view launched_application;
+static std::unordered_map<std::string_view, size_t> ranks;
+
 #define KEYS_OR X(KEY_A) | X(KEY_E) | X(KEY_B) | X(KEY_F) | X(KEY_P) | X(KEY_N) | X(KEY_D) | X(KEY_K)
 #define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, up) X(KEY_N, down)
 #define ACTIONS X(pop_back) X(paste) X(delete_word_left) X(delete_char) X(delete_whole_line) X(delete_line) \
@@ -275,6 +281,12 @@ static inline void filter_apps(void)
       if (name.find(prompt) != std::string::npos) {
         filtered_apps.emplace_back(i);
       }
+    }
+
+    if (!ranks.empty()) {
+      std::sort(filtered_apps.begin(), filtered_apps.end(), [](const auto &a, const auto &b) {
+        return ranks[apps[a].name] > ranks[apps[b].name];
+      });
     }
 
     no_matches = filtered_apps.empty();
@@ -575,12 +587,33 @@ static bool handle_keys(void)
   }
 
   if (IsKeyPressed(KEY_ENTER)) {
-    const auto &exec = get_app(lcursor).exec;
+    const auto &[name, exec] = get_app(lcursor);
     launch_application(exec);
+    launched_application = name;
     return true;
   }
 
   return false;
+}
+
+static void parse_ranks(const std::string_view &path)
+{
+  auto ok = true;
+  static const auto file = file_t::read(path.data(), &ok);
+  if (!ok) return;
+
+  for (auto line: split(file.sv, '\n')) {
+    ranks[line]++;
+  }
+}
+
+static void write_rank(const std::string_view &path, const std::string_view &rank)
+{
+  std::ofstream file(std::string(path), std::ios::app);
+  if (!file.is_open()) return;
+
+  file << rank << '\n';
+  file.close();
 }
 
 static void parse_apps(void)
@@ -617,6 +650,9 @@ static void parse_apps(void)
 
 int main(void)
 {
+  const char *home = std::getenv("HOME");
+  if (!home) return 1;
+
   display = XOpenDisplay(NULL);
   window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0, 1, 1, 0, 0, 0);
 
@@ -639,6 +675,12 @@ int main(void)
   SetWindowPosition((monitor_w - WINDOW_W) / 2, (monitor_h - WINDOW_H) / 2);
 
   parse_apps();
+
+  std::string history_path;
+  history_path += home;
+  history_path += "/.local/share/rapp_history";
+
+  parse_ranks(history_path.c_str());
 
   prompt.reserve(256);
 
@@ -734,6 +776,7 @@ int main(void)
           DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
           if (hovered && GetMouseX() < WINDOW_W - 20 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             launch_application(exec);
+            launched_application = name;
             goto end;
           }
         }
@@ -756,6 +799,10 @@ end:
   CloseWindow();
   XDestroyWindow(display, window);
   XCloseDisplay(display);
+
+  if (!launched_application.empty()) {
+    write_rank(history_path, launched_application);
+  }
 
   return 0;
 }
