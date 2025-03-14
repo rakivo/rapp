@@ -247,9 +247,10 @@ static float scroll_offset;
 
 static size_t apps_len;
 
-#define KEYS_OR X(KEY_A) | X(KEY_E) | X(KEY_B) | X(KEY_F) | X(KEY_P) | X(KEY_N)
-#define ACTIONS X(delete) X(paste) X(delete_word) X(start) X(end) X(left) X(word_left) X(right) X(word_right) X(up) X(down)
+#define KEYS_OR X(KEY_A) | X(KEY_E) | X(KEY_B) | X(KEY_F) | X(KEY_P) | X(KEY_N) | X(KEY_D) | X(KEY_K)
 #define MOVEMENTS X(KEY_A, start) X(KEY_E, end) X(KEY_B, left) X(KEY_F, right) X(KEY_P, up) X(KEY_N, down)
+#define ACTIONS X(pop_back) X(paste) X(delete_word_left) X(delete_char) X(delete_whole_line) X(delete_line) \
+  X(delete_word_right) X(start) X(end) X(left) X(word_left) X(right) X(word_right) X(up) X(down)
 
 #define DEFINE_REPEAT_KEY(action) \
   static bool pcursor_##action##_repeat_active; \
@@ -352,7 +353,9 @@ std::string_view trim(const char *str, size_t len)
   return std::string_view(str, (size_t) (end - str));
 }
 
-static inline void pcursor_paste(void)
+namespace _pcursor {
+
+static inline void paste(void)
 {
   auto ok = true;
   const auto clipboard = get_clipboard(&ok);
@@ -367,7 +370,7 @@ static inline void pcursor_paste(void)
   }
 }
 
-static inline void pcursor_delete(void)
+static inline void pop_back(void)
 {
   if (!prompt.empty()) {
     if (pcursor == prompt.size()) {
@@ -381,7 +384,31 @@ static inline void pcursor_delete(void)
   }
 }
 
-static inline void pcursor_delete_word(void)
+static inline void delete_char(void)
+{
+  if (pcursor != prompt.size()) {
+    prompt.erase(pcursor, 1);
+  }
+  filter_apps();
+}
+
+static inline void delete_line(void)
+{
+  int n = prompt.size();
+  if ((int) pcursor != n) {
+    prompt.erase(pcursor, n);
+  }
+  filter_apps();
+}
+
+static inline void delete_whole_line(void)
+{
+  prompt.clear();
+  pcursor = 0;
+  filter_apps();
+}
+
+static inline void delete_word_left(void)
 {
   int r = pcursor;
   while (r --> 1 && !isspace(prompt[r]));
@@ -390,35 +417,51 @@ static inline void pcursor_delete_word(void)
   filter_apps();
 }
 
-static inline void pcursor_start(void)
+static inline void delete_word_right(void)
+{
+  int l = pcursor, n = prompt.size();
+
+  while (l < n && isspace(prompt[l++]));
+
+  int word_end = l;
+  while (word_end < n && !isspace(prompt[word_end++]));
+
+  if (l < n) {
+    prompt.erase(pcursor, word_end - pcursor);
+  }
+
+  filter_apps();
+}
+
+static inline void start(void)
 {
   pcursor ^= pcursor;
 }
 
-static inline void pcursor_end(void)
+static inline void end(void)
 {
   pcursor = prompt.size();
 }
 
-static inline void pcursor_left(void)
+static inline void left(void)
 {
   if (pcursor > 0) pcursor--;
 }
 
-static inline void pcursor_right(void)
+static inline void right(void)
 {
   if (pcursor < prompt.size()) pcursor++;
 }
 
-static inline void pcursor_word_left(void)
+static inline void word_left(void)
 {
-  int r = pcursor;
+  int r = pcursor, n = prompt.size();
   while (r > 0 &&  isspace(prompt[--r]));
   while (r > 0 && !isspace(prompt[--r]));
-  pcursor = r;
+  pcursor = std::min(n, r > 0 ? r + 1 : r);
 }
 
-static inline void pcursor_word_right(void)
+static inline void word_right(void)
 {
   int l = pcursor, n = prompt.size();
   while (l < n &&  isspace(prompt[l++]));
@@ -426,7 +469,7 @@ static inline void pcursor_word_right(void)
   pcursor = l;
 }
 
-static inline void pcursor_up(void)
+static inline void up(void)
 {
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
@@ -438,7 +481,7 @@ static inline void pcursor_up(void)
   }
 }
 
-static inline void pcursor_down(void)
+static inline void down(void)
 {
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
@@ -448,6 +491,7 @@ static inline void pcursor_down(void)
       scroll_offset += LINE_H;
     }
   }
+}
 }
 
 static inline void handle_key_repeat(int key,
@@ -506,18 +550,24 @@ static bool handle_keys(void)
   handle_key_repeat(key, \
                     last_pcursor_##action##_press_time, \
                     pcursor_##action##_repeat_active, \
-                    pcursor_##action);
+                    _pcursor::action);
 
-  HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete);
+  HANDLE_KEY_REPEAT(KEY_BACKSPACE, pop_back);
 
   if (IsKeyDown(KEY_LEFT_ALT)) {
     HANDLE_KEY_REPEAT(KEY_B, word_left);
     HANDLE_KEY_REPEAT(KEY_F, word_right);
+    HANDLE_KEY_REPEAT(KEY_D, delete_word_right);
   }
 
-  else if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
+  if (IsKeyDown(KEY_LEFT_CONTROL) or IsKeyDown(KEY_CAPS_LOCK)) {
     HANDLE_KEY_REPEAT(KEY_Y, paste);
-    HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word);
+    HANDLE_KEY_REPEAT(KEY_D, delete_char);
+    HANDLE_KEY_REPEAT(KEY_K, delete_line);
+    if (IsKeyDown(KEY_LEFT_SHIFT)) {
+      HANDLE_KEY_REPEAT(KEY_K, delete_whole_line);
+    }
+    HANDLE_KEY_REPEAT(KEY_BACKSPACE, delete_word_left);
 #define X HANDLE_KEY_REPEAT
     MOVEMENTS
 #undef X
