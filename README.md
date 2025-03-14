@@ -17,4 +17,4 @@ $ ./build/rapp-release
 # History
 > I was not satisfied with the application finder I had, because it did not rank apps by the amount of times I have already launched them with it.
 
-> so I created [rapp](https://github.com/rakivo/rapp/tree/master) as a weekend project, implemented the frequency ranking thing, make it as simple as possible, and made the [`naysayer`](https://github.com/nickav/naysayer-theme.el) theme default, because it's the theme I use in my editor and am comfortable with.
+> so I created [rapp](https://github.com/rakivo/rapp/tree/master) as a weekend project, implemented the frequency ranking thing, made it as simple as possible, and made the [`naysayer`](https://github.com/nickav/naysayer-theme.el) theme default, because it's the theme I use in my editor and am comfortable with.
