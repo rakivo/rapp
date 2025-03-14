@@ -14,6 +14,26 @@ $ rush -t release
 $ ./build/rapp-release
 ```
 
+# Details
+> If the amount of matching apps does not fit into the window, you will see a scrollbar at the right, it's clickable and draggable (who would've thought?).
+
+> [rapp](https://github.com/rakivo/rapp/tree/master) supports basic emacs-motions, specifically:
+- `DELETE`
+- `yank`
+- `backward-kill-word`
+- `delete-char`
+- `kill-whole-line`
+- `kill-line`
+- `kill-word`
+- `move-beginning-of-line`
+- `move-end-of-line`
+- `backward-char`
+- `backward-word`
+- `forward-char`
+- `forward-word`
+- `next-line`
+- `previous-line`
+
 # History
 > I was not satisfied with the application finder I had, because it did not rank apps by the amount of times I have already launched them with it.
 
