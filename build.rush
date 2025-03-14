@@ -14,7 +14,6 @@ cflags_release = $cflags_ -O3 -DNDEBUG -static-libstdc++
 rule cxx
   depfile = $out.d
   command = $cxx $cflags -MD -MF $out.d -o $out -c $in
-  command = $cxx $cflags -MD -MF $out.d -o $out -c $in
 
 rule link
   command = $cxx $cflags -o $out $in $lflags
