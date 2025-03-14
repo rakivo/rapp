@@ -1,6 +1,6 @@
 # [rapp](https://github.com/rakivo/rapp/tree/master)
 
-!()[https://raw.githubusercontent.com/rakivo/rapp/refs/heads/master/assets/preview.png]
+![](https://raw.githubusercontent.com/rakivo/rapp/refs/heads/master/assets/preview.png)
 
 # Quick start
 > if you're not on X11, the program won't compile / work for you.
