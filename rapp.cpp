@@ -172,6 +172,100 @@ const app_t app_t::parse(const char *file_path, bool *ok)
   return app_t{name, exec};
 }
 
+static std::vector<app_t> apps;
+
+struct BKTree {
+  struct Node {
+    size_t idx;
+    std::unordered_map<size_t, Node *> children;
+
+    Node(size_t idx) : idx(idx) {}
+  };
+
+  Node *root;
+
+  BKTree(void) : root(NULL) {}
+
+  void insert(size_t idx)
+  {
+    if (!root) {
+      root = new Node(idx);
+      return;
+    }
+
+    Node *curr = root;
+    while (true) {
+      int dist = edit_distance(idx, curr->idx);
+      if (curr->children.find(dist) == curr->children.end()) {
+        curr->children[dist] = new Node(idx);
+        break;
+      }
+      curr = curr->children[dist];
+    }
+  }
+
+  std::vector<int> query(const std::string &target, int maxDist)
+  {
+    std::vector<int> ret;
+    query_rec(root, target, maxDist, ret);
+    return ret;
+  }
+
+  void query_rec(Node *node,
+                 const std::string &target,
+                 int max_dist,
+                 std::vector<int> &ret)
+  {
+    if (!node) return;
+
+    int dist = edit_distance(target, node->idx);
+    if (dist <= max_dist) {
+      ret.emplace_back(node->idx);
+    }
+
+    for (int i = dist - max_dist; i <= dist + max_dist; ++i) {
+      if (node->children.find(i) != node->children.end()) {
+        query_rec(node->children[i], target, max_dist, ret);
+      }
+    }
+  }
+
+  int edit_distance_(const std::string &a, const std::string &b) const noexcept
+  {
+    int n = a.size(), m = b.size();
+
+    if (n == 0) return m;
+    if (m == 0) return n;
+
+    std::vector<int> prev(m + 1), curr(m + 1);
+
+    for (int j = 0; j <= m; ++j) {
+      prev[j] = j;
+    }
+
+    for (int i = 1; i <= n; ++i) {
+      curr[0] = i;
+      for (int j = 1; j <= m; ++j) {
+        int cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
+        curr[j] = std::min({prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost});
+      }
+      prev.swap(curr);
+    }
+
+    return prev[m];
+  }
+
+  int edit_distance(const std::string &s, size_t idx) const noexcept
+  {
+    return edit_distance_(s, apps[idx].name);
+  }
+
+  int edit_distance(size_t a, size_t b) const noexcept
+  {
+    return edit_distance_(apps[a].name, apps[b].name);
+  }
+};
+
 void launch_application(const std::string &command)
 {
   std::string cleaned_command = command;
@@ -237,7 +331,6 @@ static Display *display;
 
 static std::string prompt;
 
-static std::vector<app_t> apps;
 static std::vector<size_t> filtered_apps;
 
 static bool no_matches, draw_all_apps;
@@ -248,6 +341,8 @@ static size_t visible_start_idx, visible_end_idx;
 static bool lcursor_visible;
 
 static float scroll_offset;
+
+static BKTree tree;
 
 static size_t apps_len;
 
@@ -276,10 +371,20 @@ static inline void filter_apps(void)
 {
   if (!prompt.empty()) {
     filtered_apps.clear();
+
+    std::unordered_set<size_t> seen;
+
     for (size_t i = 0; i < apps.size(); ++i) {
       const auto &[name, exec] = apps[i];
       if (name.find(prompt) != std::string::npos) {
         filtered_apps.emplace_back(i);
+        seen.insert(i);
+      }
+    }
+
+    for (const auto match: tree.query(prompt, 4)) {
+      if (seen.count(match) == 0) {
+        filtered_apps.emplace_back(match);
       }
     }
 
@@ -681,6 +786,10 @@ int main(void)
   SetWindowPosition((monitor_w - WINDOW_W) / 2, (monitor_h - WINDOW_H) / 2);
 
   parse_apps();
+
+  for (size_t i = 0; i < apps.size(); ++i) {
+    tree.insert(i);
+  }
 
   std::string history_path;
   history_path += home;
