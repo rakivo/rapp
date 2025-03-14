@@ -84,13 +84,14 @@ constexpr int PROMPT_FONT_SIZE = 22;
 constexpr int WINDOW_W = 800;
 constexpr int WINDOW_H = 600;
 constexpr float PROMPT_H = 40.0;
+constexpr float PROMPT_W = 15.0;
 constexpr int LINE_H = FONT_SIZE + 10;
 constexpr int PCURSOR_W = PROMPT_FONT_SIZE / 2;
 constexpr int PCURSOR_H = PROMPT_FONT_SIZE / 0.9;
 
 constexpr float SCROLL_SPEED = 50.0;
 constexpr float INITIAL_KEY_DELAY = 0.5;
-constexpr float REPEAT_KEY_INTERVAL = 0.125;
+constexpr float REPEAT_KEY_INTERVAL = 0.12;
 
 const file_t file_t::read(const char *file_path, bool *ok)
 {
@@ -474,7 +475,7 @@ static inline void up(void)
   if (!lcursor_visible) {
     lcursor = visible_start_idx;
   } else {
-    lcursor = std::max(0, (int)lcursor - 1);
+    lcursor = std::max(0, (int) lcursor - 1);
     if (lcursor < visible_start_idx) {
       scroll_offset -= LINE_H;
     }
@@ -641,6 +642,9 @@ int main(void)
 
   prompt.reserve(256);
 
+  float drag_offset = 0.0;
+  bool dragging_scrollbar = false;
+
   while (!WindowShouldClose()) {
     apps_len = draw_all_apps ? apps.size() : filtered_apps.size();
     draw_all_apps = filtered_apps.empty() && !no_matches;
@@ -652,6 +656,46 @@ int main(void)
       scroll_offset -= GetMouseWheelMove() * SCROLL_SPEED;
       scroll_offset = std::max(scroll_offset, 0.0f);
       scroll_offset = std::min(scroll_offset, (float) ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H) + PADDING));
+    }
+
+    {
+      const float scrollbar_h = (WINDOW_H - PROMPT_H) / (float) (apps_len * LINE_H) * (WINDOW_H - PROMPT_H);
+      const float scrollbar_y = scroll_offset / (float) ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H)) * ((WINDOW_H - PROMPT_H) - scrollbar_h);
+
+      const Rectangle scrollbar_rect = {WINDOW_W - 20, PROMPT_H + scrollbar_y, PROMPT_W, scrollbar_h};
+
+      const Vector2 mouse_pos = GetMousePosition();
+
+      const auto hovering_scrollbar = CheckCollisionPointRec(mouse_pos, scrollbar_rect);
+
+      if (hovering_scrollbar && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        dragging_scrollbar = true;
+        drag_offset = mouse_pos.y - scrollbar_y;
+      }
+
+      if (dragging_scrollbar && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+        dragging_scrollbar = false;
+      }
+
+      if (dragging_scrollbar) {
+        float new_scrollbar_y = mouse_pos.y - drag_offset;
+        new_scrollbar_y = std::max(new_scrollbar_y, PROMPT_H);
+        new_scrollbar_y = std::min(new_scrollbar_y, PROMPT_H + (WINDOW_H - PROMPT_H) - scrollbar_h);
+        scroll_offset = (new_scrollbar_y - PROMPT_H) / ((WINDOW_H - PROMPT_H) - scrollbar_h) * ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H));
+      }
+
+      if (!dragging_scrollbar && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (mouse_pos.x >= scrollbar_rect.x                        &&
+            mouse_pos.x <= scrollbar_rect.x + scrollbar_rect.width &&
+            mouse_pos.y >= PROMPT_H                                &&
+            mouse_pos.y <= PROMPT_H + (WINDOW_H - PROMPT_H))
+        {
+          float new_scrollbar_y = mouse_pos.y - scrollbar_h / 2;
+          new_scrollbar_y = std::max(new_scrollbar_y, PROMPT_H);
+          new_scrollbar_y = std::min(new_scrollbar_y, PROMPT_H + (WINDOW_H - PROMPT_H) - scrollbar_h);
+          scroll_offset = (new_scrollbar_y - PROMPT_H) / ((WINDOW_H - PROMPT_H) - scrollbar_h) * ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H));
+        }
+      }
     }
 
     BeginDrawing();
@@ -688,7 +732,7 @@ int main(void)
         const auto hovered = GetMouseY() > y && GetMouseY() < y + LINE_H;
         if (lcursor == (size_t) i or hovered) {
           DrawRectangle(0, y - PADDING / 3, WINDOW_W, LINE_H, HIGHLIGHT_COLOR);
-          if (hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+          if (hovered && GetMouseX() < WINDOW_W - 20 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             launch_application(exec);
             goto end;
           }
@@ -702,7 +746,7 @@ int main(void)
     if (apps_len * LINE_H > (WINDOW_H - PROMPT_H)) {
       const float scrollbar_h = (WINDOW_H - PROMPT_H) / (float) (apps_len * LINE_H) * (WINDOW_H - PROMPT_H);
       const float scrollbar_y = scroll_offset / (float) ((apps_len * LINE_H) - (WINDOW_H - PROMPT_H)) * ((WINDOW_H - PROMPT_H) - scrollbar_h);
-      DrawRectangle(WINDOW_W - 20, PROMPT_H + scrollbar_y, 10, scrollbar_h, SCROLLBAR_COLOR);
+      DrawRectangle(WINDOW_W - 20, PROMPT_H + scrollbar_y, PROMPT_W, scrollbar_h, SCROLLBAR_COLOR);
     }
 
     EndDrawing();
