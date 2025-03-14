@@ -1,0 +1,2 @@
+c++ -std=gnu++20 -Wno-missing-field-initializers -Ithirdparty/raylib/include -Wall -Wextra -Wpedantic -O3 -DNDEBUG -static-libstdc++ -MD -MF build/rapp-release.o.d -o build/rapp-release.o -c rapp.cpp
+c++ -std=gnu++20 -Wno-missing-field-initializers -Ithirdparty/raylib/include -Wall -Wextra -Wpedantic -O3 -DNDEBUG -static-libstdc++ -o build/rapp-release build/rapp-release.o -L./thirdparty/raylib/lib -l:'libraylib.a' -lX11
